@@ -99,7 +99,7 @@ WHERE NOT EXISTS (SELECT 1 FROM site_configs WHERE config_key = 'max_pending_ord
 
 -- 未支付订单自动过期时间（分钟）
 INSERT INTO site_configs (id, config_key, config_value, config_group, created_at, updated_at)
-SELECT gen_random_uuid(), 'order_expire_minutes', '30', 'risk', NOW(), NOW()
+SELECT gen_random_uuid(), 'order_expire_minutes', '15', 'risk', NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM site_configs WHERE config_key = 'order_expire_minutes');
 
 
