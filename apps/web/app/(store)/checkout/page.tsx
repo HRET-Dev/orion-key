@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { useLocale, useCart } from "@/lib/context"
 import { orderApi, paymentApi, withMockFallback, getApiErrorMessage } from "@/services/api"
 import { mockPaymentChannels, mockCreateOrder } from "@/lib/mock-data"
-import { validateEmail, generateIdempotencyKey } from "@/lib/utils"
+import { validateEmail, generateIdempotencyKey, getCurrencySymbol } from "@/lib/utils"
 import { PaymentSelector } from "@/components/shared/payment-selector"
 import type { PaymentChannelItem } from "@/types"
 
@@ -75,7 +75,13 @@ export default function CheckoutPage() {
       await refreshCart()
       toast.success(t("checkout.processingOrder"))
       const qr = result.payment.qrcode_url || result.payment.payment_url || ""
-      const payUrl = `/pay/${result.payment.order_id}?method=${selectedPayment}${qr ? `&qr=${encodeURIComponent(qr)}` : ""}`
+      let payUrl = `/pay/${result.payment.order_id}?method=${selectedPayment}${qr ? `&qr=${encodeURIComponent(qr)}` : ""}`
+      // USDT 支付额外参数
+      if (result.payment.wallet_address) {
+        payUrl += `&wallet=${encodeURIComponent(result.payment.wallet_address)}`
+        payUrl += `&crypto_amount=${encodeURIComponent(result.payment.crypto_amount || "")}`
+        payUrl += `&chain=${encodeURIComponent(result.payment.chain || "")}`
+      }
       router.push(payUrl)
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, t))
@@ -103,13 +109,13 @@ export default function CheckoutPage() {
                   {item.spec_name ? ` (${item.spec_name})` : ""}
                   {" x"}{item.quantity}
                 </span>
-                <span className="font-medium text-foreground">{"\u00A5"}{item.subtotal.toFixed(2)}</span>
+                <span className="font-medium text-foreground">{getCurrencySymbol(item.currency)}{item.subtotal.toFixed(2)}</span>
               </div>
             ))}
             <div className="flex items-center justify-between border-t border-border pt-3">
               <span className="text-base font-medium text-foreground">{t("checkout.totalAmount")}</span>
               <span className="text-2xl font-bold text-primary">
-                {"\u00A5"}{totalAmount.toFixed(2)}
+                {getCurrencySymbol(items[0]?.currency)}{totalAmount.toFixed(2)}
               </span>
             </div>
           </div>
@@ -149,6 +155,11 @@ export default function CheckoutPage() {
             selected={selectedPayment}
             onSelect={setSelectedPayment}
           />
+          {selectedPayment.startsWith("usdt_") && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t("payment.usdt.rateHint")}
+            </p>
+          )}
         </div>
 
         {/* Security notice */}
@@ -172,7 +183,7 @@ export default function CheckoutPage() {
               {t("checkout.processingOrder")}
             </span>
           ) : (
-            <>{t("checkout.confirmOrder")} {"\u00A5"}{totalAmount.toFixed(2)}</>
+            <>{t("checkout.confirmOrder")} {getCurrencySymbol(items[0]?.currency)}{totalAmount.toFixed(2)}</>
           )}
         </button>
       </div>

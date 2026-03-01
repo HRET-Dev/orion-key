@@ -10,6 +10,9 @@ import com.orionkey.exception.BusinessException;
 import com.orionkey.repository.OrderItemRepository;
 import com.orionkey.repository.OrderRepository;
 import com.orionkey.repository.PaymentChannelRepository;
+import com.orionkey.service.BepusdtService;
+import com.orionkey.service.BepusdtService.BepusdtConfig;
+import com.orionkey.service.BepusdtService.BepusdtPaymentResult;
 import com.orionkey.service.EpayService;
 import com.orionkey.service.EpayService.ChannelConfig;
 import com.orionkey.service.EpayService.EpayResult;
@@ -39,6 +42,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final EpayService epayService;
+    private final BepusdtService bepusdtService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -64,11 +68,50 @@ public class PaymentServiceImpl implements PaymentService {
             case "epay" -> createEpayPayment(channel, order, paymentMethod, amount);
             case "native_alipay" -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "原生支付宝支付尚未实现，请使用易支付渠道");
             case "native_wxpay" -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "原生微信支付尚未实现，请使用易支付渠道");
-            case "usdt" -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "USDT 支付尚未实现");
+            case "usdt" -> createBepusdtPayment(channel, order, amount);
             default -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "不支持的支付提供商类型: " + providerType);
         }
 
         return buildResult(order);
+    }
+
+    /**
+     * BEpusdt USDT 下单流程
+     */
+    private void createBepusdtPayment(PaymentChannel channel, Order order, BigDecimal amount) {
+        BepusdtConfig config = buildBepusdtConfig(channel);
+        String productName = buildProductName(order.getId());
+
+        BepusdtPaymentResult result = bepusdtService.createPayment(
+                config, order.getId().toString(), amount, productName);
+
+        order.setPaymentUrl(result.paymentUrl());
+        order.setUsdtWalletAddress(result.walletAddress());
+        order.setUsdtCryptoAmount(result.cryptoAmount());
+        order.setUsdtTradeId(result.tradeId());
+        order.setUsdtChain(channel.getChannelCode());
+        orderRepository.save(order);
+    }
+
+    /**
+     * 从渠道的 config_data JSON 构建 BepusdtConfig。
+     */
+    public BepusdtConfig buildBepusdtConfig(PaymentChannel channel) {
+        Map<String, String> cfg = parseConfigData(channel.getConfigData());
+
+        String apiUrl = requireConfig(cfg, "api_url", channel.getChannelCode());
+        String apiToken = requireConfig(cfg, "api_token", channel.getChannelCode());
+        String notifyUrl = requireConfig(cfg, "notify_url", channel.getChannelCode());
+        String redirectUrl = cfg.getOrDefault("redirect_url", "");
+        String tradeType = cfg.getOrDefault("trade_type", "usdt.trc20");
+        String fiat = cfg.getOrDefault("fiat", "CNY");
+        int timeout = Integer.parseInt(cfg.getOrDefault("timeout", "900"));
+        BigDecimal tolerance = new BigDecimal(cfg.getOrDefault("auto_approve_tolerance", "1.5"));
+        BigDecimal upper = new BigDecimal(cfg.getOrDefault("manual_review_upper", "5.0"));
+        String fixedRate = cfg.getOrDefault("fixed_rate", "");
+
+        return new BepusdtConfig(apiUrl, apiToken, notifyUrl, redirectUrl,
+                tradeType, fiat, timeout, tolerance, upper, fixedRate);
     }
 
     /**
@@ -121,6 +164,13 @@ public class PaymentServiceImpl implements PaymentService {
         result.put("payment_url", order.getPaymentUrl());
         result.put("qrcode_url", order.getPaymentUrl());
         result.put("expires_at", order.getExpiresAt());
+
+        // USDT 支付额外字段
+        if (order.getUsdtWalletAddress() != null) {
+            result.put("wallet_address", order.getUsdtWalletAddress());
+            result.put("crypto_amount", order.getUsdtCryptoAmount());
+            result.put("chain", order.getUsdtChain());
+        }
         return result;
     }
 

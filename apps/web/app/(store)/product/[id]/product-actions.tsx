@@ -88,7 +88,13 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
       )
       toast.success(t("checkout.processingOrder"))
       const qr = result.payment.qrcode_url || result.payment.payment_url || ""
-      const payUrl = `/pay/${result.payment.order_id}?method=${selectedPayment}${qr ? `&qr=${encodeURIComponent(qr)}` : ""}`
+      let payUrl = `/pay/${result.payment.order_id}?method=${selectedPayment}${qr ? `&qr=${encodeURIComponent(qr)}` : ""}`
+      // USDT 支付额外参数
+      if (result.payment.wallet_address) {
+        payUrl += `&wallet=${encodeURIComponent(result.payment.wallet_address)}`
+        payUrl += `&crypto_amount=${encodeURIComponent(result.payment.crypto_amount || "")}`
+        payUrl += `&chain=${encodeURIComponent(result.payment.chain || "")}`
+      }
       router.push(payUrl)
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, t))
