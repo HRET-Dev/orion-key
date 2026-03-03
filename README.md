@@ -300,13 +300,13 @@ docker compose -f docker-compose.prod.yml up -d    # 后台启动
 
 ## AI 商店推荐（非 Demo 演示）
 
-<a href="https://www.orionkey.shop/" target="_blank"><img src="https://img.shields.io/badge/Orion%20Key%20Shop-在线商店-FF6B00?style=for-the-badge" alt="Orion Key Shop" /></a>
+[![Orion Key Shop](https://img.shields.io/badge/Orion%20Key%20Shop-在线商店-FF6B00?style=for-the-badge)](https://www.orionkey.shop/)
 
 ---
 
 ## TG 交流群组
 
-<a href="https://t.me/+bFPWrYnruDIwZWRh" target="_blank"><img src="https://img.shields.io/badge/Telegram-群组-26A5E4?logo=telegram&logoColor=white" alt="Telegram" /></a>
+[![Telegram](https://img.shields.io/badge/Telegram-群组-26A5E4?logo=telegram&logoColor=white)](https://t.me/+bFPWrYnruDIwZWRh)
 
 ---
 
