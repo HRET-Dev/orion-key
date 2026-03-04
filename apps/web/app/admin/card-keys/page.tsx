@@ -472,12 +472,12 @@ export default function AdminCardKeysPage() {
       )}
 
       {/* Import Modal */}
-      <Modal open={showImportModal} onClose={() => setShowImportModal(false)} className="max-w-lg">
+      <Modal open={showImportModal} onClose={() => { setShowImportModal(false); setImportErrors({}) }} className="max-w-lg">
             <div className="border-b border-border px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-foreground">{t("admin.batchImportKeys")}</h2>
               <button
                 type="button"
-                onClick={() => setShowImportModal(false)}
+                onClick={() => { setShowImportModal(false); setImportErrors({}) }}
                 className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
               >
                 <X className="h-5 w-5" />

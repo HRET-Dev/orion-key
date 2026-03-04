@@ -763,7 +763,7 @@ export default function AdminProductsPage() {
                 <textarea
                   ref={detailTextareaRef}
                   className="min-h-32 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="使用 Markdown 编写商品详细说明&#10;支持通过右上角按钮上传图片，自动插入 Markdown 图片链接"
+                  placeholder={"支持 Markdown 格式编辑\n# 标题  ## 二级标题  ### 三级标题\n**粗体**  *斜体*  空一行为段落换行\n![图片描述](图片URL) — 可点击上方「插入图片」自动生成"}
                   value={formData.detail_md}
                   onChange={(e) => setFormData({ ...formData, detail_md: e.target.value })}
                 />

@@ -1,11 +1,13 @@
 "use client"
 
-import React from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import { usePathname } from "next/navigation"
-import { Wrench, Mail } from "lucide-react"
+import { Wrench, Mail, X } from "lucide-react"
+import ReactMarkdown from "react-markdown"
 import { StoreHeader } from "@/components/layout/store-header"
 import { StoreFooter } from "@/components/layout/store-footer"
 import { VisitTracker } from "@/components/store/visit-tracker"
+import { Modal } from "@/components/ui/modal"
 import { useSiteConfig, useAuth, useLocale } from "@/lib/context"
 
 function AnnouncementBar() {
@@ -63,6 +65,59 @@ function MaintenanceAdminBanner() {
   )
 }
 
+const POPUP_DISMISSED_KEY = "popup_dismissed"
+
+function PopupAnnouncement() {
+  const { config } = useSiteConfig()
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (
+      config?.popup_enabled &&
+      config.popup_content &&
+      !sessionStorage.getItem(POPUP_DISMISSED_KEY)
+    ) {
+      setOpen(true)
+    }
+  }, [config?.popup_enabled, config?.popup_content])
+
+  const handleClose = useCallback(() => {
+    setOpen(false)
+    sessionStorage.setItem(POPUP_DISMISSED_KEY, "1")
+  }, [])
+
+  if (!open) return null
+
+  return (
+    <Modal open={open} onClose={handleClose} className="max-w-lg">
+      <div className="flex items-center justify-between border-b border-border px-6 py-4">
+        <h2 className="text-base font-semibold text-foreground">公告</h2>
+        <button
+          type="button"
+          className="rounded-lg p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          onClick={handleClose}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="px-6 py-4">
+        <div className="prose prose-sm max-w-none text-muted-foreground dark:prose-invert">
+          <ReactMarkdown>{config!.popup_content!}</ReactMarkdown>
+        </div>
+      </div>
+      <div className="flex justify-end border-t border-border px-6 py-3">
+        <button
+          type="button"
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          onClick={handleClose}
+        >
+          我知道了
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 /** Routes that are always accessible even in maintenance mode */
 const MAINTENANCE_EXEMPT_PATHS = ["/login", "/register"]
 
@@ -97,6 +152,7 @@ export function StoreShell({ siteName, children }: StoreShellProps) {
       <StoreHeader siteName={siteName} />
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 lg:px-6">{children}</main>
       <StoreFooter />
+      <PopupAnnouncement />
     </div>
   )
 }
