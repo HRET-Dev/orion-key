@@ -184,6 +184,7 @@ const zh = {
   "payment.redirectingToPay": "正在跳转至支付页面...",
   "payment.returnedFromPay": "如已完成支付，请等待系统确认",
   "payment.retryPay": "重新发起支付",
+  "payment.wechatMobileScanHint": "请截图后打开微信扫一扫",
   "payment.completedPayment": "已完成支付？去",
   "payment.goQueryOrder": "查询订单",
 
@@ -743,6 +744,7 @@ const en: Record<keyof typeof zh, string> = {
   "payment.redirectingToPay": "Redirecting to payment...",
   "payment.returnedFromPay": "If paid, please wait for confirmation",
   "payment.retryPay": "Retry Payment",
+  "payment.wechatMobileScanHint": "Please screenshot and scan in WeChat",
   "payment.completedPayment": "Payment completed? ",
   "payment.goQueryOrder": "Check order status",
 
