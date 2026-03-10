@@ -67,6 +67,13 @@ mail:
   enabled: ${MAIL_ENABLED:true}
   site-url: ${MAIL_SITE_URL:https://example.com}
 
+# 受信代理 IP（Nginx / Docker 网桥），用于正确解析真实客户端 IP
+# 影响：限流（按真实 IP 限流）、Webhook 日志（记录真实回调来源 IP）
+# Docker 环境必须加入网桥网关 IP，否则所有请求共用同一限流桶
+# 查看网桥 IP：docker network inspect orion-key_default | grep Gateway
+rate-limit:
+  trusted-proxies: ${RATE_LIMIT_TRUSTED_PROXIES:127.0.0.1,::1,0:0:0:0:0:0:0:1}
+
 # Logging
 logging:
   level:

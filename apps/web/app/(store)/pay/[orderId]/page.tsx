@@ -57,7 +57,7 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
 
   // USDT 支付判断 & 参数
   const isUsdtPayment = paymentMethod.startsWith("usdt_")
-  // 微信移动端：不支持 H5 拉起，回退展示二维码（兼容 wechat / wxpay 等写法）
+  // 微信移动端：jspay 走 JSAPI（需微信内置浏览器），普通浏览器只能展示二维码
   const isWechatMobile = isMobile && ["wechat", "wxpay"].includes(paymentMethod.toLowerCase())
   const walletAddress = searchParams.get("wallet") || ""
   const cryptoAmount = searchParams.get("crypto_amount") || ""
@@ -68,12 +68,12 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
   useEffect(() => {
     const qrFromParam = searchParams.get("qr")
     if (qrFromParam) {
-      setQrcodeUrl(decodeURIComponent(qrFromParam))
+      setQrcodeUrl(qrFromParam)
     }
 
     const payurlFromParam = searchParams.get("payurl")
     if (payurlFromParam) {
-      setPayUrlH5(decodeURIComponent(payurlFromParam))
+      setPayUrlH5(payurlFromParam)
     }
 
     // 检查是否已跳转过支付 App（从 sessionStorage 恢复状态）
@@ -102,6 +102,7 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
   }, [orderId, searchParams])
 
   // H5 自动跳转（移动端 + 有 payUrl + PENDING 状态 + 未跳转过 + 非微信）
+  // 微信 jspay 走 JSAPI（需微信浏览器），普通浏览器不能 H5 跳转，只能扫码
   useEffect(() => {
     if (!isMobile || !payUrlH5 || status !== "PENDING" || isUsdtPayment || isWechatMobile) return
     const storageKey = `pay_redirected_${orderId}`
@@ -199,8 +200,8 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
       if (result.qrcode_url) setQrcodeUrl(result.qrcode_url)
       else if (result.payment_url) setQrcodeUrl(result.payment_url)
 
-      if (isMobile && result.pay_url) {
-        // 清除跳转标记，允许重新跳转
+      if (isMobile && result.pay_url && !isWechatMobile) {
+        // 清除跳转标记，允许重新跳转（微信走 JSAPI 不能跳转，只刷新二维码）
         sessionStorage.removeItem(`pay_redirected_${orderId}`)
         window.location.href = result.pay_url
       } else {
