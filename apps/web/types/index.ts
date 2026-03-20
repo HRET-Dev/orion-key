@@ -71,6 +71,7 @@ export interface ProductSpec {
   name: string
   price: number
   stock_available: number
+  card_key_count?: number
   is_visible?: boolean
   sort_order?: number
 }
@@ -103,6 +104,7 @@ export interface ProductCard {
 export interface ProductDetail extends ProductCard {
   detail_md?: string
   specs: ProductSpec[]
+  spec_enabled?: boolean
   wholesale_enabled: boolean
   wholesale_rules: WholesaleRule[]
   low_stock_threshold?: number
@@ -367,6 +369,7 @@ export interface CardKeyStockSummary {
   product_title: string
   spec_id: string | null
   spec_name: string | null
+  spec_enabled?: boolean
   total: number
   available: number
   sold: number

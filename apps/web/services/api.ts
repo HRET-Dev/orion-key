@@ -586,6 +586,8 @@ const ERROR_CODE_I18N: Record<number, string> = {
   30002: "error.insufficientStock",
   30003: "error.specNotFound",
   30004: "error.purchaseLimitExceeded",
+  30005: "error.specHasCardKeys",
+  30006: "error.specNameDuplicate",
   // Order
   40001: "error.orderNotFound",
   40002: "error.orderExpired",
