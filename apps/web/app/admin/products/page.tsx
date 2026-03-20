@@ -481,7 +481,7 @@ export default function AdminProductsPage() {
                         <button type="button" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" title="编辑" onClick={() => handleEdit(product)}>
                           <Edit className="h-4 w-4" />
                         </button>
-                        <button type="button" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" title="导入卡密" onClick={() => { setShowImportModal(product); setImportSpecId(product.specs[0]?.id || "") }}>
+                        <button type="button" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" title="导入卡密" onClick={() => { setShowImportModal(product); setImportSpecId("") }}>
                           <KeyRound className="h-4 w-4" />
                         </button>
                         <button type="button" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors" title={product.is_enabled !== false ? "下架" : "上架"} onClick={() => handleToggleStatus(product)}>
@@ -857,6 +857,7 @@ export default function AdminProductsPage() {
                 <div className="flex flex-col gap-1.5">
                   <label className="text-sm font-medium text-foreground">{t("admin.selectSpec")}</label>
                   <select className="h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" value={importSpecId} onChange={(e) => setImportSpecId(e.target.value)}>
+                    <option value="">默认规格</option>
                     {showImportModal.specs.map((spec) => (
                       <option key={spec.id} value={spec.id}>{spec.name}</option>
                     ))}
