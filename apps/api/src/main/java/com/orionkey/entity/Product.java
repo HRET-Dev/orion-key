@@ -44,7 +44,7 @@ public class Product extends BaseEntity {
 
     private boolean wholesaleEnabled = false;
 
-    @Column(name = "spec_enabled", nullable = false)
+    @Column(name = "spec_enabled", columnDefinition = "boolean not null default false")
     private boolean specEnabled = false;
 
     @Column(name = "is_enabled")
