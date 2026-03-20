@@ -283,10 +283,23 @@ export default function OrderQueryPage() {
             {/* Order Header */}
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-muted-foreground">{t("payment.orderNo")}</p>
-                <p className="font-mono text-xs font-medium text-foreground">
-                  {order.id.length > 30 ? `${order.id.slice(0, 12)}...${order.id.slice(-8)}` : order.id}
-                </p>
+                <p className="text-sm text-muted-foreground">{t("payment.orderNo")}</p>
+                <span className="flex items-center gap-1">
+                  <span
+                    className="cursor-pointer font-mono text-sm font-medium text-foreground underline-offset-4 transition-all hover:underline hover:text-primary"
+                    title={order.id}
+                    onClick={() => copyToClipboard(order.id)}
+                  >
+                    {order.id.length > 30 ? `${order.id.slice(0, 12)}...${order.id.slice(-8)}` : order.id}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(order.id)}
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                </span>
               </div>
               <OrderStatusBadge status={order.status} />
             </div>
@@ -454,7 +467,7 @@ export default function OrderQueryPage() {
                   </div>
                   {deliver.groups.map((group, gIdx) => (
                     <div key={gIdx} className="mb-2">
-                      <p className="mb-1 text-xs font-medium text-muted-foreground">
+                      <p className="mb-1 text-sm font-medium text-muted-foreground">
                         {group.product_title}{group.spec_name ? ` - ${group.spec_name}` : ""}
                       </p>
                       <div className="rounded-md bg-muted p-3">
@@ -463,7 +476,7 @@ export default function OrderQueryPage() {
                             key={kIdx}
                             className="flex items-center justify-between py-1"
                           >
-                            <code className="font-mono text-sm text-foreground">{key}</code>
+                            <code className="min-w-0 break-all font-mono text-sm text-foreground">{key}</code>
                             <button
                               onClick={() => copyToClipboard(key)}
                               className="text-muted-foreground hover:text-foreground"
