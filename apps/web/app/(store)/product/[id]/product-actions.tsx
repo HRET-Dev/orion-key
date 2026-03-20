@@ -139,7 +139,7 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
     <div className="lg:sticky lg:top-4 flex flex-col gap-4">
       {/* Title */}
       <div>
-        <h1 className="text-xl font-bold text-foreground text-balance">
+        <h1 className="text-xl font-bold text-foreground">
           {product.title}
         </h1>
       </div>
@@ -147,7 +147,7 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
       {/* Price + Specs + Stock */}
       <div className="rounded-lg border border-border p-4 space-y-4">
         {/* Price row + delivery status */}
-        <div className="flex items-baseline justify-between">
+        <div className="flex flex-wrap items-baseline justify-between gap-y-2">
           <div className="flex items-baseline gap-3">
             <div className="flex items-baseline gap-0.5">
               <span className="text-lg font-extrabold text-primary">{getCurrencySymbol(product.currency)}</span>
