@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation"
 import { Zap, Minus, Plus, ShoppingCart, Package, TrendingUp } from "lucide-react"
 import { toast } from "sonner"
 import { useLocale, useAuth, useCart } from "@/lib/context"
-import { orderApi, withMockFallback, getApiErrorMessage } from "@/services/api"
+import { orderApi, withMockFallback, getApiErrorMessage, setTurnstileHeaders } from "@/services/api"
 import { mockCreateOrder } from "@/lib/mock-data"
+import { Turnstile, useTurnstile } from "@/components/shared/turnstile"
 import { cn, validateEmail, generateIdempotencyKey, getCurrencySymbol, detectPaymentDevice, isMobileDevice } from "@/lib/utils"
 import { PaymentSelector } from "@/components/shared/payment-selector"
 import type { ProductDetail, ProductSpec, PaymentChannelItem } from "@/types"
@@ -35,6 +36,7 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
     enabledChannels.length > 0 ? enabledChannels[0].channel_code : ""
   )
   const [submitting, setSubmitting] = useState(false)
+  const { turnstileToken, setTurnstileToken, handleTurnstileReset } = useTurnstile()
 
   const currentPrice = selectedSpec ? selectedSpec.price : product.base_price
   const totalPrice = currentPrice * quantity
@@ -75,6 +77,7 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
 
     setSubmitting(true)
     try {
+      setTurnstileHeaders(turnstileToken)
       const device = detectPaymentDevice()
       const result = await withMockFallback(
         () => orderApi.create({
@@ -112,6 +115,7 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
       router.push(payUrl)
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, t))
+      handleTurnstileReset()
     } finally {
       setSubmitting(false)
     }
@@ -316,6 +320,8 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
             </span>
           </div>
         </div>
+
+        <Turnstile onSuccess={setTurnstileToken} onError={handleTurnstileReset} className="mb-3" />
 
         {/* Action Buttons */}
         <div className="flex gap-3">

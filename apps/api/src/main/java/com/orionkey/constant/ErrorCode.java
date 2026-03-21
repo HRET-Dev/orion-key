@@ -48,6 +48,10 @@ public final class ErrorCode {
     public static final int TXID_VERIFY_FAILED = 50005;
     public static final int ORDER_NOT_USDT = 50006;
 
+    // ── Security 60001~60099 ──
+    public static final int TURNSTILE_FAILED = 60001;
+    public static final int DEVICE_RATE_LIMITED = 60002;
+
     // ── Admin 70001~70099 ──
     public static final int CATEGORY_NAME_EXISTS = 70001;
     public static final int CATEGORY_HAS_PRODUCTS = 70002;

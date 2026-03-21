@@ -88,6 +88,9 @@ public class OrderServiceImpl implements OrderService {
 
         BigDecimal unitPrice = getUnitPrice(product, specId, quantity);
         BigDecimal totalAmount = unitPrice.multiply(BigDecimal.valueOf(quantity));
+        if (totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "订单金额异常，请联系客服");
+        }
         int expireMinutes = getConfigInt("order_expire_minutes", 15);
 
         Order order = new Order();

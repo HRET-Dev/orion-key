@@ -6,13 +6,14 @@ import Link from "next/link"
 import { Search, Copy, Download, FileText, CheckCircle2, X, Clock, HelpCircle, ExternalLink, Loader2, AlertCircle, Info } from "lucide-react"
 import { toast } from "sonner"
 import { useLocale, useSiteConfig } from "@/lib/context"
-import { orderApi, withMockFallback, getApiErrorMessage } from "@/services/api"
+import { orderApi, withMockFallback, getApiErrorMessage, setTurnstileHeaders } from "@/services/api"
 import { mockQueryOrders, mockDeliver } from "@/lib/mock-data"
 import { OrderStatusBadge } from "@/components/shared/order-status-badge"
 import { PaymentIcon, getPaymentLabel } from "@/components/shared/payment-icon"
 import type { OrderBrief, DeliverResult, TxidVerifyResult } from "@/types"
 import { cn } from "@/lib/utils"
 import { Modal } from "@/components/ui/modal"
+import { Turnstile, useTurnstile } from "@/components/shared/turnstile"
 
 interface RecentQuery {
   value: string
@@ -37,6 +38,10 @@ export default function OrderQueryPage() {
   const [txidInput, setTxidInput] = useState("")
   const [txidSubmitting, setTxidSubmitting] = useState(false)
   const [txidResult, setTxidResult] = useState<Record<string, TxidVerifyResult>>({})
+  const { turnstileToken, setTurnstileToken, handleTurnstileReset } = useTurnstile()
+  // Ref 避免 doSearch 闭包捕获过期 token
+  const turnstileTokenRef = useRef(turnstileToken)
+  useEffect(() => { turnstileTokenRef.current = turnstileToken }, [turnstileToken])
 
   // Load recent queries + handle URL params on mount
   useEffect(() => {
@@ -73,6 +78,7 @@ export default function OrderQueryPage() {
     setDeliverResults([])
 
     try {
+      setTurnstileHeaders(turnstileTokenRef.current)
       // Determine if input is email or order ID
       const isEmail = trimmed.includes("@")
       const queryParams = isEmail
@@ -202,6 +208,7 @@ export default function OrderQueryPage() {
     if (!txid) return
     setTxidSubmitting(true)
     try {
+      setTurnstileHeaders(turnstileToken)
       const result = await orderApi.submitTxid(orderId, txid)
       setTxidResult(prev => ({ ...prev, [orderId]: result }))
       if (result.result === "AUTO_APPROVED") {
@@ -211,10 +218,11 @@ export default function OrderQueryPage() {
       }
     } catch (err) {
       toast.error(getApiErrorMessage(err, t))
+      handleTurnstileReset()
     } finally {
       setTxidSubmitting(false)
     }
-  }, [txidInput, t, doSearch, queryValue])
+  }, [txidInput, t, doSearch, queryValue, turnstileToken, handleTurnstileReset])
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -261,6 +269,8 @@ export default function OrderQueryPage() {
           </button>
         </div>
       </div>
+
+      <Turnstile onSuccess={setTurnstileToken} onError={handleTurnstileReset} />
 
       {/* Results — 有查询结果时优先展示在最近订单上方 */}
       {isSearching && (
