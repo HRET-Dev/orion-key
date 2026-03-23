@@ -6,16 +6,17 @@ import { useLocale } from "@/lib/context"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { adminRiskApi, withMockFallback } from "@/services/api"
-import { mockRiskConfig, mockAdminOrderList } from "@/lib/mock-data"
+import { mockAdminOrderList } from "@/lib/mock-data"
 import { OrderStatusBadge } from "@/components/shared/order-status-badge"
 import type { RiskConfig, AdminOrderItem } from "@/types"
 
 export default function AdminRiskPage() {
   const { t } = useLocale()
   const [tab, setTab] = useState<"config" | "flagged">("config")
-  const [config, setConfig] = useState<RiskConfig>({
-    turnstile_enabled: true,
-    device_rate_limit_enabled: true,
+  // 默认值：Turnstile 和设备限流默认关闭（需后台手动启用），其余为合理默认
+  const defaultConfig: RiskConfig = {
+    turnstile_enabled: false,
+    device_rate_limit_enabled: false,
     device_order_limit_per_hour: 10,
     device_txid_limit_per_hour: 5,
     txid_submit_limit_per_order: 3,
@@ -28,7 +29,8 @@ export default function AdminRiskPage() {
     order_expire_minutes: 15,
     max_pending_orders_per_ip: 3,
     max_pending_orders_per_user: 3,
-  })
+  }
+  const [config, setConfig] = useState<RiskConfig>(defaultConfig)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [flaggedOrders, setFlaggedOrders] = useState<AdminOrderItem[]>([])
@@ -37,13 +39,11 @@ export default function AdminRiskPage() {
 
   const fetchConfig = useCallback(async () => {
     try {
-      const data = await withMockFallback(
-        () => adminRiskApi.getConfig(),
-        () => ({ ...mockRiskConfig })
-      )
-      setConfig(data)
+      const data = await adminRiskApi.getConfig()
+      // 后端仅返回 DB 中已有的 key（稀疏对象），用默认值兜底缺失字段
+      setConfig({ ...defaultConfig, ...data })
     } catch {
-      // withMockFallback handles network errors
+      // API 失败时保留默认值
     } finally {
       setLoading(false)
     }
@@ -68,10 +68,7 @@ export default function AdminRiskPage() {
   const handleSaveConfig = async () => {
     setSaving(true)
     try {
-      await withMockFallback(
-        () => adminRiskApi.updateConfig(config),
-        () => null
-      )
+      await adminRiskApi.updateConfig(config)
       toast.success("风控配置保存成功")
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "保存失败")
