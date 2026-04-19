@@ -92,6 +92,8 @@ jobs:
           file: ./Dockerfile.web    # 指定 Dockerfile 路径
           push: true
           tags: ${{ steps.meta.outputs.web_image }}
+          build-args: |
+            BACKEND_URL=${{ vars.BACKEND_URL }}
 
   # ════════════════════════════════════════════════════════════════
   # Job 2: 部署到服务器（在自建 runner 上执行）
