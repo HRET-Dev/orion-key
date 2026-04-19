@@ -50,9 +50,11 @@ const PAYMENT_LABELS: Record<string, string> = {
 export function getPaymentLabel(method: string, t?: (key: any) => string): string {
   const m = normalize(method)
   if (t) {
-    if (m === "alipay") return t("payment.alipay")
-    if (m === "wechat") return t("payment.wechat")
+    if (m.includes("alipay")) return t("payment.alipay")
+    if (m.includes("wechat") || m.includes("wxpay")) return t("payment.wechat")
   }
+  if (m.includes("alipay")) return "支付宝"
+  if (m.includes("wechat") || m.includes("wxpay")) return "微信支付"
   return PAYMENT_LABELS[m] || method
 }
 
@@ -60,8 +62,8 @@ export function getPaymentLabel(method: string, t?: (key: any) => string): strin
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getPaymentScanHint(method: string, t: (key: any) => string): string {
   const m = normalize(method)
-  if (m === "alipay") return t("payment.scanWithAlipay")
-  if (m === "wechat") return t("payment.scanWithWechat")
+  if (m.includes("alipay")) return t("payment.scanWithAlipay")
+  if (m.includes("wechat") || m.includes("wxpay")) return t("payment.scanWithWechat")
   return t("payment.scanToPay")
 }
 
