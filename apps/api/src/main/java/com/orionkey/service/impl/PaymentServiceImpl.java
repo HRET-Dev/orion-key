@@ -35,7 +35,9 @@ public class PaymentServiceImpl implements PaymentService {
     /** channel_code → 易支付 type 映射（仅 provider_type=epay 时使用） */
     private static final Map<String, String> EPAY_TYPE_MAP = Map.of(
             "alipay", "alipay",
-            "wechat", "wxpay"
+            "wechat", "wxpay",
+            "codepay_alipay", "alipay",
+            "codepay_wechat", "wxpay"
     );
 
     private final PaymentChannelRepository paymentChannelRepository;
@@ -72,6 +74,7 @@ public class PaymentServiceImpl implements PaymentService {
         String providerType = channel.getProviderType();
         switch (providerType) {
             case "epay" -> createEpayPayment(channel, order, paymentMethod, amount, device);
+            case "codepay" -> createEpayPayment(channel, order, paymentMethod, amount, device);
             case "native_alipay" -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "原生支付宝支付尚未实现，请使用易支付渠道");
             case "native_wxpay" -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "原生微信支付尚未实现，请使用易支付渠道");
             case "usdt" -> createBepusdtPayment(channel, order, amount);
@@ -122,9 +125,13 @@ public class PaymentServiceImpl implements PaymentService {
      * 易支付下单流程
      */
     private void createEpayPayment(PaymentChannel channel, Order order, String paymentMethod, BigDecimal amount, String device) {
-        String epayType = EPAY_TYPE_MAP.get(paymentMethod.toLowerCase());
+        Map<String, String> cfg = parseConfigData(channel.getConfigData());
+        String epayType = cfg.get("epay_type");
+        if (epayType == null || epayType.isBlank()) epayType = cfg.get("type");
+        if (epayType == null || epayType.isBlank()) epayType = cfg.get("pay_type");
+        if (epayType == null || epayType.isBlank()) epayType = EPAY_TYPE_MAP.get(paymentMethod.toLowerCase());
         if (epayType == null) {
-            throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "该渠道不支持易支付");
+            throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "该渠道不支持易支付，请在配置中设置 epay_type（如 alipay/wxpay）");
         }
 
         ChannelConfig config = buildChannelConfig(channel);
