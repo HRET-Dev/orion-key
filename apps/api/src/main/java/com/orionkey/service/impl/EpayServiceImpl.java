@@ -134,30 +134,55 @@ public class EpayServiceImpl implements EpayService {
             throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：响应格式异常");
         }
 
-        Object codeObj = body.get("code");
-        int code = codeObj instanceof Number ? ((Number) codeObj).intValue() : -1;
+        int code = parseCode(body.get("code"));
         String msg = firstNonBlankValue(body, "msg", "message");
         String tradeNo = firstNonBlankValue(body, "trade_no", "tradeNo");
-        String payUrl = firstNonBlankValue(body, "payurl", "pay_url", "payment_url", "url");
-        String qrcode = firstNonBlankValue(body, "qrcode", "qr_code", "qrCode");
+        String payUrl = firstNonBlankValue(body, "payurl", "pay_url", "payment_url", "url", "payUrl");
+        String qrcode = firstNonBlankValue(body, "qrcode", "qr_code", "qrCode", "qrcode_url", "qr_url", "qrurl", "qr");
         String urlscheme = firstNonBlankValue(body, "urlscheme", "url_scheme");
 
         // 部分网关会把 payurl/qrcode 放在 data 字段内，做兼容处理。
-        if (body.get("data") instanceof Map<?, ?> dataMapRaw) {
+        Map<String, Object> dataMap = extractDataMap(body.get("data"));
+        if (dataMap != null) {
+            if (tradeNo == null) tradeNo = firstNonBlankValue(dataMap, "trade_no", "tradeNo");
+            if (payUrl == null) payUrl = firstNonBlankValue(dataMap, "payurl", "pay_url", "payment_url", "url", "payUrl");
+            if (qrcode == null) qrcode = firstNonBlankValue(dataMap, "qrcode", "qr_code", "qrCode", "qrcode_url", "qr_url", "qrurl", "qr");
+            if (urlscheme == null) urlscheme = firstNonBlankValue(dataMap, "urlscheme", "url_scheme");
+        }
+
+        log.info("Epay API response: code={}, msg={}, tradeNo={}, payUrl={}, qrcode={}", code, msg, tradeNo, payUrl, qrcode);
+        return new GatewayResponse(code, msg, tradeNo, payUrl, qrcode, urlscheme);
+    }
+
+    private Map<String, Object> extractDataMap(Object data) {
+        if (data == null) return null;
+        if (data instanceof Map<?, ?> dataMapRaw) {
             Map<String, Object> dataMap = new LinkedHashMap<>();
             for (Map.Entry<?, ?> entry : dataMapRaw.entrySet()) {
                 if (entry.getKey() != null) {
                     dataMap.put(entry.getKey().toString(), entry.getValue());
                 }
             }
-            if (tradeNo == null) tradeNo = firstNonBlankValue(dataMap, "trade_no", "tradeNo");
-            if (payUrl == null) payUrl = firstNonBlankValue(dataMap, "payurl", "pay_url", "payment_url", "url");
-            if (qrcode == null) qrcode = firstNonBlankValue(dataMap, "qrcode", "qr_code", "qrCode");
-            if (urlscheme == null) urlscheme = firstNonBlankValue(dataMap, "urlscheme", "url_scheme");
+            return dataMap;
         }
+        if (data instanceof String text && !text.isBlank()) {
+            try {
+                return objectMapper.readValue(text, new TypeReference<>() {});
+            } catch (Exception e) {
+                log.debug("Epay API data field is not JSON object: {}", text);
+            }
+        }
+        return null;
+    }
 
-        log.info("Epay API response: code={}, msg={}, tradeNo={}, payUrl={}, qrcode={}", code, msg, tradeNo, payUrl, qrcode);
-        return new GatewayResponse(code, msg, tradeNo, payUrl, qrcode, urlscheme);
+    private int parseCode(Object codeObj) {
+        if (codeObj == null) return -1;
+        if (codeObj instanceof Number number) return number.intValue();
+        try {
+            return Integer.parseInt(codeObj.toString().trim());
+        } catch (Exception ignored) {
+            return -1;
+        }
     }
 
     private String firstNonBlankValue(Map<String, Object> source, String... keys) {
