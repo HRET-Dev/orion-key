@@ -65,6 +65,7 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
   const isUsdtPayment = paymentMethod.startsWith("usdt_")
   // 微信移动端：jspay 走 JSAPI（需微信内置浏览器），普通浏览器只能展示二维码
   const paymentCode = paymentMethod.toLowerCase()
+  const isCodepayPayment = paymentCode.startsWith("codepay_")
   const isWechatMobile = isMobile && (paymentCode.includes("wechat") || paymentCode.includes("wxpay"))
   const walletAddress = searchParams.get("wallet") || ""
   const cryptoAmount = searchParams.get("crypto_amount") || ""
@@ -108,10 +109,9 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
     fetchOrderInfo()
   }, [orderId, searchParams])
 
-  // H5 自动跳转（移动端 + 有 payUrl + PENDING 状态 + 未跳转过 + 非微信）
-  // 微信 jspay 走 JSAPI（需微信浏览器），普通浏览器不能 H5 跳转，只能扫码
+  // 码支付默认使用网关收银台页面：PC/移动端都直接跳转
   useEffect(() => {
-    if (!isMobile || !payUrlH5 || status !== "PENDING" || isUsdtPayment || isWechatMobile) return
+    if (!isCodepayPayment || !payUrlH5 || status !== "PENDING") return
     const storageKey = `pay_redirected_${orderId}`
     if (sessionStorage.getItem(storageKey)) {
       setHasRedirected(true)
@@ -120,7 +120,21 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
     sessionStorage.setItem(storageKey, "1")
     setHasRedirected(true)
     window.location.href = payUrlH5
-  }, [isMobile, payUrlH5, status, orderId, isUsdtPayment, isWechatMobile])
+  }, [isCodepayPayment, payUrlH5, status, orderId])
+
+  // H5 自动跳转（移动端 + 有 payUrl + PENDING 状态 + 未跳转过 + 非微信 + 非码支付）
+  // 微信 jspay 走 JSAPI（需微信浏览器），普通浏览器不能 H5 跳转，只能扫码
+  useEffect(() => {
+    if (!isMobile || !payUrlH5 || status !== "PENDING" || isUsdtPayment || isWechatMobile || isCodepayPayment) return
+    const storageKey = `pay_redirected_${orderId}`
+    if (sessionStorage.getItem(storageKey)) {
+      setHasRedirected(true)
+      return
+    }
+    sessionStorage.setItem(storageKey, "1")
+    setHasRedirected(true)
+    window.location.href = payUrlH5
+  }, [isMobile, payUrlH5, status, orderId, isUsdtPayment, isWechatMobile, isCodepayPayment])
 
   // Countdown timer — 仅在服务端返回真实倒计时后才开始递减
   // 倒计时归零时仅停止递减，不单方面设置 EXPIRED — 等待下一次轮询从服务端获取真实状态
@@ -197,7 +211,7 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
       if (result.qrcode_url) setQrcodeUrl(result.qrcode_url)
       else if (result.payment_url) setQrcodeUrl(result.payment_url)
 
-      if (isMobile && result.pay_url && !isWechatMobile) {
+      if ((isCodepayPayment || (isMobile && !isWechatMobile)) && result.pay_url) {
         // 清除跳转标记，允许重新跳转（微信走 JSAPI 不能跳转，只刷新二维码）
         sessionStorage.removeItem(`pay_redirected_${orderId}`)
         window.location.href = result.pay_url
@@ -210,7 +224,7 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
     } finally {
       setRetrying(false)
     }
-  }, [retrying, orderId, isMobile, t])
+  }, [retrying, orderId, isMobile, t, isWechatMobile, isCodepayPayment])
 
   const copyToClipboard = useCallback((text: string) => {
     if (navigator.clipboard?.writeText) {
