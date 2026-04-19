@@ -58,7 +58,8 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
   // USDT 支付判断 & 参数
   const isUsdtPayment = paymentMethod.startsWith("usdt_")
   // 微信移动端：jspay 走 JSAPI（需微信内置浏览器），普通浏览器只能展示二维码
-  const isWechatMobile = isMobile && ["wechat", "wxpay"].includes(paymentMethod.toLowerCase())
+  const paymentCode = paymentMethod.toLowerCase()
+  const isWechatMobile = isMobile && (paymentCode.includes("wechat") || paymentCode.includes("wxpay"))
   const walletAddress = searchParams.get("wallet") || ""
   const cryptoAmount = searchParams.get("crypto_amount") || ""
   const usdtChain = searchParams.get("chain") || paymentMethod

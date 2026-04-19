@@ -48,6 +48,23 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     ],
   },
   {
+    type: "codepay",
+    name: "码支付（聚合支付）",
+    description: "对接码支付平台，支持支付宝/微信收款，回调兼容易支付格式",
+    channels: [
+      { code: "codepay_alipay", name: "码支付-支付宝" },
+      { code: "codepay_wechat", name: "码支付-微信" },
+    ],
+    configFields: [
+      { key: "pid", label: "商户ID (PID)", placeholder: "码支付商户 PID" },
+      { key: "key", label: "商户密钥 (Key)", placeholder: "MD5 密钥", type: "password" },
+      { key: "api_url", label: "API 地址", placeholder: "例如：https://pay.example.com/" },
+      { key: "notify_url", label: "异步回调地址", placeholder: "例如：https://yourdomain.com/api/payments/webhook/epay" },
+      { key: "return_url", label: "同步跳转地址", placeholder: "例如：https://yourdomain.com/order/query" },
+      { key: "epay_type", label: "支付类型", placeholder: "alipay 或 wxpay（可选，默认按渠道自动识别）" },
+    ],
+  },
+  {
     type: "native_alipay",
     name: "原生支付宝",
     description: "直接对接支付宝开放平台，需要企业资质",
