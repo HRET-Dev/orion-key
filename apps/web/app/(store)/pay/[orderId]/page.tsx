@@ -28,6 +28,12 @@ import { PaymentIcon, getPaymentLabel, getPaymentBrandColor, getPaymentScanHint 
 
 const POLL_INTERVAL = 3000 // 3 seconds
 const MANUAL_REFRESH_COOLDOWN = 10 // 10 seconds
+const QR_IMAGE_URL_RE = /(?:\.(png|jpe?g|gif|webp)(\?|$))|(?:qrcode|qr_code|qrcode\.php|qrcode\/)/i
+
+function isQrImageSource(value: string): boolean {
+  if (!value) return false
+  return value.startsWith("data:image/") || QR_IMAGE_URL_RE.test(value)
+}
 
 export default function PaymentPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = use(params)
@@ -413,7 +419,16 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
               </p>
               <div className="flex h-52 w-52 items-center justify-center rounded-xl bg-white p-3">
                 {qrcodeUrl ? (
-                  <QRCodeSVG value={qrcodeUrl} size={184} level="M" includeMargin={false} />
+                  isQrImageSource(qrcodeUrl) ? (
+                    <img
+                      src={qrcodeUrl}
+                      alt="payment qrcode"
+                      className="h-[184px] w-[184px] object-contain"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <QRCodeSVG value={qrcodeUrl} size={184} level="M" includeMargin={false} />
+                  )
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Loader2 className="h-8 w-8 animate-spin" />
