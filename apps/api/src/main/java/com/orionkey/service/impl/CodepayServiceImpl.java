@@ -108,7 +108,7 @@ public class CodepayServiceImpl implements CodepayService {
 
     private String buildHostedCheckoutAction(String apiUrl) {
         String normalized = apiUrl + (apiUrl.endsWith("/") ? "" : "/");
-        return normalized + "api.php";
+        return normalized + "submit.php";
     }
 
     private Map<String, Object> buildResult(Order order) {
