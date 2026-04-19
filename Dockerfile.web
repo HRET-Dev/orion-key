@@ -28,6 +28,10 @@ RUN corepack enable
 # 后续所有命令都在 /app 目录下执行
 WORKDIR /app
 
+# 后端地址
+ARG BACKEND_URL
+ENV BACKEND_URL=${BACKEND_URL}
+
 # ── 依赖安装（利用 Docker 层缓存优化构建速度）──
 #
 # Docker 的核心优化机制："层缓存"
