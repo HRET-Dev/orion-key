@@ -257,6 +257,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     private static String requireConfig(Map<String, String> cfg, String field, String channelCode) {
         String value = cfg.get(field);
+        if (value != null) value = value.trim();
         if (value == null || value.isBlank()) {
             throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE,
                     "支付渠道 [" + channelCode + "] 缺少必填配置项: " + field + "，请在后台「支付渠道管理」中完善配置");
