@@ -13,6 +13,7 @@ import com.orionkey.repository.PaymentChannelRepository;
 import com.orionkey.service.BepusdtService;
 import com.orionkey.service.BepusdtService.BepusdtConfig;
 import com.orionkey.service.BepusdtService.BepusdtPaymentResult;
+import com.orionkey.service.CodepayService;
 import com.orionkey.service.EpayService;
 import com.orionkey.service.EpayService.ChannelConfig;
 import com.orionkey.service.EpayService.EpayResult;
@@ -35,15 +36,14 @@ public class PaymentServiceImpl implements PaymentService {
     /** channel_code → 易支付 type 映射（仅 provider_type=epay 时使用） */
     private static final Map<String, String> EPAY_TYPE_MAP = Map.of(
             "alipay", "alipay",
-            "wechat", "wxpay",
-            "codepay_alipay", "alipay",
-            "codepay_wechat", "wxpay"
+            "wechat", "wxpay"
     );
 
     private final PaymentChannelRepository paymentChannelRepository;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final EpayService epayService;
+    private final CodepayService codepayService;
     private final BepusdtService bepusdtService;
     private final ObjectMapper objectMapper;
 
@@ -76,7 +76,7 @@ public class PaymentServiceImpl implements PaymentService {
         String providerType = channel.getProviderType();
         switch (providerType) {
             case "epay" -> immediateResult = createEpayPayment(channel, order, paymentMethod, amount, device);
-            case "codepay" -> immediateResult = createEpayPayment(channel, order, paymentMethod, amount, device);
+            case "codepay" -> immediateResult = codepayService.createPayment(channel, order, paymentMethod, amount, device);
             case "native_alipay" -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "原生支付宝支付尚未实现，请使用易支付渠道");
             case "native_wxpay" -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "原生微信支付尚未实现，请使用易支付渠道");
             case "usdt" -> createBepusdtPayment(channel, order, amount);
@@ -145,7 +145,7 @@ public class PaymentServiceImpl implements PaymentService {
         String productName = buildProductName(order.getId());
 
         if (!mapiEnabled) {
-            return buildHostedCheckoutResult(channel, config, order, epayType, productName, amount);
+            return buildHostedCheckoutResult(config, order, epayType, productName, amount);
         }
 
         EpayResult epayResult = epayService.createPayment(
@@ -209,8 +209,7 @@ public class PaymentServiceImpl implements PaymentService {
         return result;
     }
 
-    private Map<String, Object> buildHostedCheckoutResult(PaymentChannel channel,
-                                                          ChannelConfig config,
+    private Map<String, Object> buildHostedCheckoutResult(ChannelConfig config,
                                                           Order order,
                                                           String epayType,
                                                           String productName,
@@ -229,14 +228,14 @@ public class PaymentServiceImpl implements PaymentService {
         fields.put("sign_type", "MD5");
 
         Map<String, Object> result = buildResult(order);
-        result.put("hosted_page_action", buildHostedCheckoutAction(config.apiUrl(), channel.getProviderType()));
+        result.put("hosted_page_action", buildHostedCheckoutAction(config.apiUrl()));
         result.put("hosted_page_fields", fields);
         return result;
     }
 
-    private String buildHostedCheckoutAction(String apiUrl, String providerType) {
+    private String buildHostedCheckoutAction(String apiUrl) {
         String normalized = apiUrl + (apiUrl.endsWith("/") ? "" : "/");
-        return "codepay".equals(providerType) ? normalized + "api.php" : normalized + "submit.php";
+        return normalized + "submit.php";
     }
 
     private boolean parseBooleanConfig(String value, boolean defaultValue) {

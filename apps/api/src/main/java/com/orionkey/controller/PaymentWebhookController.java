@@ -28,6 +28,16 @@ public class PaymentWebhookController {
     }
 
     /**
+     * 码支付 GET callback — returns plain text "SUCCESS"
+     */
+    @GetMapping(value = "/codepay", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> handleCodepayCallback(@RequestParam Map<String, String> params) {
+        log.info("Codepay callback received: {}", params);
+        String result = webhookService.processCodepayCallback(params);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
      * BEpusdt USDT 支付回调 — POST JSON，返回 "ok" 表示成功
      */
     @PostMapping(value = "/usdt", produces = MediaType.TEXT_PLAIN_VALUE)

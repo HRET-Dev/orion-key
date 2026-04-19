@@ -218,7 +218,7 @@ public class EpayServiceImpl implements EpayService {
             log.info("Epay: gateway returned no payUrl, using qrcode URL as mobile redirect: {}", effectivePayUrl);
         }
 
-        return new EpayResult(resp.code, resp.msg, resp.tradeNo, effectivePayUrl, resultQrcode, null, null);
+        return new EpayResult(resp.code, resp.msg, resp.tradeNo, effectivePayUrl, resultQrcode);
     }
 
     private boolean isInvalidSignature(String msg) {
