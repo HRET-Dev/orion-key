@@ -139,7 +139,7 @@ public class EpayServiceImpl implements EpayService {
         String msg = firstNonBlankValue(body, "msg", "message");
         String tradeNo = firstNonBlankValue(body, "trade_no", "tradeNo");
         String payUrl = firstNonBlankValue(body, "payurl", "pay_url", "payment_url", "url");
-        String qrcode = firstNonBlankValue(body, "qrcode", "qr_code", "qrCode", "qr_code_url", "qrcode_url");
+        String qrcode = firstNonBlankValue(body, "qrcode", "qr_code", "qrCode");
         String urlscheme = firstNonBlankValue(body, "urlscheme", "url_scheme");
 
         // 部分网关会把 payurl/qrcode 放在 data 字段内，做兼容处理。
@@ -152,12 +152,9 @@ public class EpayServiceImpl implements EpayService {
             }
             if (tradeNo == null) tradeNo = firstNonBlankValue(dataMap, "trade_no", "tradeNo");
             if (payUrl == null) payUrl = firstNonBlankValue(dataMap, "payurl", "pay_url", "payment_url", "url");
-            if (qrcode == null) qrcode = firstNonBlankValue(dataMap, "qrcode", "qr_code", "qrCode", "qr_code_url", "qrcode_url");
+            if (qrcode == null) qrcode = firstNonBlankValue(dataMap, "qrcode", "qr_code", "qrCode");
             if (urlscheme == null) urlscheme = firstNonBlankValue(dataMap, "urlscheme", "url_scheme");
         }
-
-        payUrl = normalizePayUrl(payUrl);
-        qrcode = normalizeQrcodeValue(qrcode);
 
         log.info("Epay API response: code={}, msg={}, tradeNo={}, payUrl={}, qrcode={}", code, msg, tradeNo, payUrl, qrcode);
         return new GatewayResponse(code, msg, tradeNo, payUrl, qrcode, urlscheme);
@@ -171,33 +168,6 @@ public class EpayServiceImpl implements EpayService {
             if (!str.isBlank()) return str;
         }
         return null;
-    }
-
-    private String normalizePayUrl(String payUrl) {
-        if (payUrl == null) return null;
-        String normalized = payUrl.trim();
-        if (normalized.isEmpty()) return null;
-
-        // AliMPay 经营码模式会返回文案占位值，不能作为可扫码内容。
-        if ("经营码收款模式".equals(normalized) || "转账收款模式".equals(normalized)) {
-            return null;
-        }
-        return normalized;
-    }
-
-    private String normalizeQrcodeValue(String qrcode) {
-        if (qrcode == null) return null;
-        String normalized = qrcode.trim();
-        if (normalized.isEmpty()) return null;
-
-        // Base64 二维码图片转成 data URL，前端可直接 <img> 展示。
-        if (!normalized.startsWith("http://") && !normalized.startsWith("https://")
-                && !normalized.startsWith("data:image/")
-                && normalized.length() > 200
-                && normalized.matches("^[A-Za-z0-9+/=\\r\\n]+$")) {
-            return "data:image/png;base64," + normalized.replaceAll("\\s+", "");
-        }
-        return normalized;
     }
 
     private EpayResult buildResult(GatewayResponse resp, String device) {
