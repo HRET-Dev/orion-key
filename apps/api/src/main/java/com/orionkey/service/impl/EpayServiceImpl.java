@@ -174,7 +174,8 @@ public class EpayServiceImpl implements EpayService {
         String resultQrcode = resp.qrcode != null ? resp.qrcode : resp.urlscheme;
         String effectivePayUrl = resp.payUrl;
 
-        if (effectivePayUrl == null && device != null && !"pc".equals(device) && resultQrcode != null) {
+        if (effectivePayUrl == null && device != null && !"pc".equals(device)
+                && resultQrcode != null && !resultQrcode.startsWith("data:image/")) {
             effectivePayUrl = resultQrcode;
             log.info("Epay: gateway returned no payUrl, using qrcode URL as mobile redirect: {}", effectivePayUrl);
         }
