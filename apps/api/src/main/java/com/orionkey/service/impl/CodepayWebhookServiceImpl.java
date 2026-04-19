@@ -128,11 +128,18 @@ public class CodepayWebhookServiceImpl implements CodepayWebhookService {
                 return "FAIL";
             }
             if (!isQueryStatusPaid(queryResult.tradeStatus())) {
-                log.error("Codepay callback rejected: query status={}, expected TRADE_SUCCESS/1, out_trade_no={}",
-                        queryResult.tradeStatus(), outTradeNo);
-                event.setProcessResult("QUERY_STATUS_MISMATCH");
-                webhookEventRepository.save(event);
-                return "FAIL";
+                if (isQueryPendingButCallbackSucceeded(queryResult.tradeStatus(), tradeStatus)) {
+                    // AliMPay 等实现可能先发 TRADE_SUCCESS 回调，再异步把查询接口状态从 0 切到 1。
+                    // 在签名与金额均已通过时，允许放行，避免误拒真实支付。
+                    log.warn("Codepay callback query status pending but callback succeeded, accepting callback: queryStatus={}, callbackStatus={}, out_trade_no={}",
+                            queryResult.tradeStatus(), tradeStatus, outTradeNo);
+                } else {
+                    log.error("Codepay callback rejected: query status={}, expected TRADE_SUCCESS/1, out_trade_no={}",
+                            queryResult.tradeStatus(), outTradeNo);
+                    event.setProcessResult("QUERY_STATUS_MISMATCH");
+                    webhookEventRepository.save(event);
+                    return "FAIL";
+                }
             }
             if (queryResult.money() != null) {
                 try {
@@ -242,5 +249,9 @@ public class CodepayWebhookServiceImpl implements CodepayWebhookService {
 
     private boolean isQueryStatusPaid(String status) {
         return "TRADE_SUCCESS".equals(status) || "1".equals(status);
+    }
+
+    private boolean isQueryPendingButCallbackSucceeded(String queryStatus, String callbackStatus) {
+        return "0".equals(queryStatus) && "TRADE_SUCCESS".equals(callbackStatus);
     }
 }
