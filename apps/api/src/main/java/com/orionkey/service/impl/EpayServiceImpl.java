@@ -60,76 +60,52 @@ public class EpayServiceImpl implements EpayService {
         int maxRetries = 2;
         Exception lastException = null;
         List<String> signCandidates = buildSignCandidates(config.key(), params);
+        int signIndex = 0;
 
-        for (int signIndex = 0; signIndex < signCandidates.size(); signIndex++) {
-            String currentSign = signCandidates.get(signIndex);
-            formData.set("sign", currentSign);
-            formData.set("sign_type", "MD5");
-            log.debug("Epay request sign strategy index={}, sign={}", signIndex, currentSign);
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                if (attempt > 0) {
+                    log.info("Epay API retry attempt {}/{}", attempt, maxRetries);
+                    Thread.sleep(1000);
+                }
+
+                String currentSign = signCandidates.get(Math.min(signIndex, signCandidates.size() - 1));
+                formData.set("sign", currentSign);
+                formData.set("sign_type", "MD5");
+                log.debug("Epay request sign strategy index={}, sign={}", signIndex, currentSign);
+
+                ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+                String responseBody = response.getBody();
 
             for (int attempt = 0; attempt <= maxRetries; attempt++) {
                 try {
-                    if (attempt > 0) {
-                        log.info("Epay API retry attempt {}/{} (sign strategy index={})", attempt, maxRetries, signIndex);
-                        Thread.sleep(1000);
+                    body = objectMapper.readValue(responseBody, new TypeReference<>() {});
+                } catch (Exception parseEx) {
+                    log.error("Epay API response is not valid JSON: {}", responseBody);
+                    throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：响应格式异常");
+                }
+
+                int code = body.get("code") instanceof Number n ? n.intValue() : -1;
+                String msg = body.get("msg") != null ? body.get("msg").toString() : "";
+                String tradeNo = body.get("trade_no") != null ? body.get("trade_no").toString() : "";
+                String payUrl = body.get("payurl") != null ? body.get("payurl").toString() : null;
+                String qrcode = body.get("qrcode") != null ? body.get("qrcode").toString() : null;
+                String urlscheme = body.get("urlscheme") != null ? body.get("urlscheme").toString() : null;
+
+                log.info("Epay API response: code={}, msg={}, tradeNo={}, payUrl={}, qrcode={}", code, msg, tradeNo, payUrl, qrcode);
+
+                if (code != 1) {
+                    // 码支付/部分易支付分支验签规则不一致（常见报错：Invalid signature）时，
+                    // 自动切换签名策略再试，提升兼容性。
+                    if (msg != null && msg.toLowerCase().contains("invalid signature")
+                            && signIndex < signCandidates.size() - 1) {
+                        signIndex++;
+                        log.warn("Epay signature rejected by gateway, switching sign strategy to index={} and retrying", signIndex);
+                        continue;
                     }
-
-                    ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
-                    String responseBody = response.getBody();
-
-                    if (responseBody == null || responseBody.isBlank()) {
-                        log.error("Epay API returned null/empty body");
-                        throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：响应为空");
-                    }
-
-                    log.debug("Epay API raw response: {}", responseBody);
-
-                    Map<String, Object> body;
-                    try {
-                        body = objectMapper.readValue(responseBody, new TypeReference<>() {});
-                    } catch (Exception parseEx) {
-                        log.error("Epay API response is not valid JSON: {}", responseBody);
-                        throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：响应格式异常");
-                    }
-
-                    int code = body.get("code") instanceof Number n ? n.intValue() : -1;
-                    String msg = body.get("msg") != null ? body.get("msg").toString() : "";
-                    String tradeNo = body.get("trade_no") != null ? body.get("trade_no").toString() : "";
-                    String payUrl = body.get("payurl") != null ? body.get("payurl").toString() : null;
-                    String qrcode = body.get("qrcode") != null ? body.get("qrcode").toString() : null;
-                    String urlscheme = body.get("urlscheme") != null ? body.get("urlscheme").toString() : null;
-
-                    log.info("Epay API response: code={}, msg={}, tradeNo={}, payUrl={}, qrcode={}", code, msg, tradeNo, payUrl, qrcode);
-
-                    if (code != 1) {
-                        if (msg != null && msg.toLowerCase().contains("invalid signature")) {
-                            if (signIndex < signCandidates.size() - 1) {
-                                log.warn("Epay signature rejected by gateway, switching sign strategy to index={} and retrying", signIndex + 1);
-                                break; // 切下一种签名策略
-                            }
-                            throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL,
-                                    "支付创建失败：网关验签失败，请检查 PID/KEY 与签名规则");
-                        }
-                        // 其他业务错误不重试
-                        log.error("Epay API error: code={}, msg={}", code, msg);
-                        throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：" + msg);
-                    }
-
-                    String resultQrcode = qrcode != null ? qrcode : urlscheme;
-
-                    // 网关未返回 payUrl 且为移动端请求时，将 qrcode（收银台页面 URL）作为 H5 跳转入口
-                    String effectivePayUrl = payUrl;
-                    if (effectivePayUrl == null && device != null && !"pc".equals(device) && resultQrcode != null) {
-                        effectivePayUrl = resultQrcode;
-                        log.info("Epay: gateway returned no payUrl, using qrcode URL as mobile redirect: {}", effectivePayUrl);
-                    }
-
-                    return new EpayResult(code, msg, tradeNo, effectivePayUrl, resultQrcode);
-                } catch (BusinessException e) {
-                    throw e; // 业务异常直接抛出，不重试
-                } catch (Exception e) {
-                    lastException = e;
-                    log.warn("Epay API attempt {} failed (sign strategy index={}): {}", attempt + 1, signIndex, e.getMessage());
+                    // 其他业务错误不重试
+                    log.error("Epay API error: code={}, msg={}", code, msg);
+                    throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：" + msg);
                 }
             }
         }
