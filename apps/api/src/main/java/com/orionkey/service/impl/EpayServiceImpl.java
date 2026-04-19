@@ -56,7 +56,7 @@ public class EpayServiceImpl implements EpayService {
 
         String url = config.apiUrl() + (config.apiUrl().endsWith("/") ? "" : "/") + "mapi.php";
 
-        // 带重试的网络调用（最多重试 2 次，间隔 1 秒）
+        // 带重试的网络调用（每种签名策略最多重试 2 次，间隔 1 秒）
         int maxRetries = 2;
         Exception lastException = null;
         List<String> signCandidates = buildSignCandidates(config.key(), params);
@@ -77,14 +77,7 @@ public class EpayServiceImpl implements EpayService {
                 ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
                 String responseBody = response.getBody();
 
-                if (responseBody == null || responseBody.isBlank()) {
-                    log.error("Epay API returned null/empty body");
-                    throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：响应为空");
-                }
-
-                log.debug("Epay API raw response: {}", responseBody);
-
-                Map<String, Object> body;
+            for (int attempt = 0; attempt <= maxRetries; attempt++) {
                 try {
                     body = objectMapper.readValue(responseBody, new TypeReference<>() {});
                 } catch (Exception parseEx) {
@@ -114,23 +107,6 @@ public class EpayServiceImpl implements EpayService {
                     log.error("Epay API error: code={}, msg={}", code, msg);
                     throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：" + msg);
                 }
-
-                String resultQrcode = qrcode != null ? qrcode : urlscheme;
-
-                // 网关未返回 payUrl 且为移动端请求时，将 qrcode（收银台页面 URL）作为 H5 跳转入口
-                String effectivePayUrl = payUrl;
-                if (effectivePayUrl == null && device != null && !"pc".equals(device) && resultQrcode != null) {
-                    effectivePayUrl = resultQrcode;
-                    log.info("Epay: gateway returned no payUrl, using qrcode URL as mobile redirect: {}", effectivePayUrl);
-                }
-
-                return new EpayResult(code, msg, tradeNo, effectivePayUrl, resultQrcode);
-
-            } catch (BusinessException e) {
-                throw e; // 业务异常直接抛出，不重试
-            } catch (Exception e) {
-                lastException = e;
-                log.warn("Epay API attempt {} failed: {}", attempt + 1, e.getMessage());
             }
         }
 
