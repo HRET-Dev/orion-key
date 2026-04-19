@@ -49,17 +49,13 @@ public class EpayServiceImpl implements EpayService {
         params.put("return_url", dynamicReturnUrl);
         params.put("name", name);
         params.put("money", money.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString());
-        params.put("clientip", clientIp != null ? clientIp : "127.0.0.1");
-        params.put("device", device != null && !device.isBlank() ? device : "pc");
+        // CodePay 兼容网关（如 AliMPay）通常只按上述固定字段参与验签，
+        // 这里不额外发送 clientip/device，避免网关忽略字段导致验签不一致。
 
         log.info("Epay createPayment: outTradeNo={}, type={}, money={}, apiUrl={}", outTradeNo, type, money, config.apiUrl());
 
-        MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
-        params.forEach(formData::add);
-
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(formData, headers);
 
         String url = config.apiUrl() + (config.apiUrl().endsWith("/") ? "" : "/") + "mapi.php";
 
@@ -69,8 +65,11 @@ public class EpayServiceImpl implements EpayService {
 
         for (int signIndex = 0; signIndex < signCandidates.size(); signIndex++) {
             String currentSign = signCandidates.get(signIndex);
+            MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+            params.forEach(formData::add);
             formData.set("sign", currentSign);
             formData.set("sign_type", "MD5");
+            HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(formData, headers);
             log.debug("Epay request sign strategy index={}, sign={}", signIndex, currentSign);
 
             for (int attempt = 0; attempt <= maxRetries; attempt++) {
