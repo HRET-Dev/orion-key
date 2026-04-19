@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, ChevronDown, Eye, Download, ChevronLeft, ChevronRight, X, CheckCircle } from "lucide-react"
+import { Search, ChevronDown, Eye, Download, ChevronLeft, ChevronRight, X, CheckCircle, Pencil } from "lucide-react"
 import { cn, stripInvisible } from "@/lib/utils"
 import { useLocale } from "@/lib/context"
 import { toast } from "sonner"
@@ -52,6 +52,10 @@ export default function AdminOrdersPage() {
 
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [markPaidConfirm, setMarkPaidConfirm] = useState<string | null>(null)
+  const [editingCardKey, setEditingCardKey] = useState<OrderCardKey | null>(null)
+  const [editingCardKeyContent, setEditingCardKeyContent] = useState("")
+  const [resendDeliveryEmail, setResendDeliveryEmail] = useState(false)
+  const [updatingCardKey, setUpdatingCardKey] = useState(false)
 
   const fetchOrders = async () => {
     setLoading(true)
@@ -96,18 +100,22 @@ export default function AdminOrdersPage() {
 
   const totalPages = Math.ceil(total / ITEMS_PER_PAGE)
 
+  const fetchOrderCardKeys = async (orderId: string) => {
+    try {
+      const keys = await withMockFallback(
+        () => adminCardKeyApi.getByOrder(orderId),
+        () => [...mockOrderCardKeys]
+      )
+      setDetailCardKeys(keys)
+    } catch {
+      setDetailCardKeys([])
+    }
+  }
+
   const handleViewDetail = async (order: AdminOrderItem) => {
     setShowDetail(order)
     if (order.status === "DELIVERED") {
-      try {
-        const keys = await withMockFallback(
-          () => adminCardKeyApi.getByOrder(order.id),
-          () => [...mockOrderCardKeys]
-        )
-        setDetailCardKeys(keys)
-      } catch {
-        setDetailCardKeys([])
-      }
+      await fetchOrderCardKeys(order.id)
     } else {
       setDetailCardKeys([])
     }
@@ -125,6 +133,35 @@ export default function AdminOrdersPage() {
       await fetchOrders()
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "操作失败")
+    }
+  }
+
+  const handleUpdateCardKey = async () => {
+    if (!showDetail || !editingCardKey) return
+    const content = editingCardKeyContent.trim()
+    if (!content) {
+      toast.error("卡密内容不能为空")
+      return
+    }
+
+    setUpdatingCardKey(true)
+    try {
+      await withMockFallback(
+        () => adminOrderApi.updateCardKey(showDetail.id, editingCardKey.card_key_id, {
+          content,
+          resend_email: resendDeliveryEmail,
+        }),
+        () => null
+      )
+      toast.success(resendDeliveryEmail ? "卡密已更新，发货邮件已重发" : "卡密已更新")
+      setEditingCardKey(null)
+      setEditingCardKeyContent("")
+      setResendDeliveryEmail(false)
+      await fetchOrderCardKeys(showDetail.id)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "更新失败")
+    } finally {
+      setUpdatingCardKey(false)
     }
   }
 
@@ -374,7 +411,16 @@ export default function AdminOrdersPage() {
       )}
 
       {/* Detail Modal */}
-      <Modal open={showDetail !== null} onClose={() => setShowDetail(null)} className="max-w-lg">
+      <Modal
+        open={showDetail !== null}
+        onClose={() => {
+          setShowDetail(null)
+          setEditingCardKey(null)
+          setEditingCardKeyContent("")
+          setResendDeliveryEmail(false)
+        }}
+        className="max-w-lg"
+      >
         {showDetail && (
           <>
             <div className="border-b border-border px-6 py-4 flex items-center justify-between">
@@ -384,7 +430,12 @@ export default function AdminOrdersPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setShowDetail(null)}
+                onClick={() => {
+                  setShowDetail(null)
+                  setEditingCardKey(null)
+                  setEditingCardKeyContent("")
+                  setResendDeliveryEmail(false)
+                }}
                 className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
               >
                 <X className="h-5 w-5" />
@@ -456,7 +507,21 @@ export default function AdminOrdersPage() {
                         <div className="flex flex-col gap-1.5">
                           {detailCardKeys.map((ck) => (
                             <div key={ck.card_key_id} className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-                              <code className="text-sm text-foreground">{ck.content}</code>
+                              <div className="flex items-center justify-between gap-3">
+                                <code className="text-sm text-foreground break-all">{ck.content}</code>
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                                  title="修改卡密"
+                                  onClick={() => {
+                                    setEditingCardKey(ck)
+                                    setEditingCardKeyContent(ck.content)
+                                    setResendDeliveryEmail(false)
+                                  }}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -471,7 +536,21 @@ export default function AdminOrdersPage() {
                             <div className="flex flex-col gap-1.5">
                               {keys.map((ck) => (
                                 <div key={ck.card_key_id} className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-                                  <code className="text-sm text-foreground">{ck.content}</code>
+                                  <div className="flex items-center justify-between gap-3">
+                                    <code className="text-sm text-foreground break-all">{ck.content}</code>
+                                    <button
+                                      type="button"
+                                      className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                                      title="修改卡密"
+                                      onClick={() => {
+                                        setEditingCardKey(ck)
+                                        setEditingCardKeyContent(ck.content)
+                                        setResendDeliveryEmail(false)
+                                      }}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -487,7 +566,12 @@ export default function AdminOrdersPage() {
               <button
                 type="button"
                 className="rounded-lg border border-input bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors"
-                onClick={() => setShowDetail(null)}
+                onClick={() => {
+                  setShowDetail(null)
+                  setEditingCardKey(null)
+                  setEditingCardKeyContent("")
+                  setResendDeliveryEmail(false)
+                }}
               >
                 {t("common.close")}
               </button>
@@ -503,6 +587,69 @@ export default function AdminOrdersPage() {
             </div>
           </>
         )}
+      </Modal>
+
+      {/* Edit Card Key Modal */}
+      <Modal
+        open={editingCardKey !== null}
+        onClose={() => {
+          if (updatingCardKey) return
+          setEditingCardKey(null)
+          setEditingCardKeyContent("")
+          setResendDeliveryEmail(false)
+        }}
+        className="max-w-md"
+      >
+        <div className="flex flex-col gap-4 p-6">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">修改卡密</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              修改后将作为该订单最终发货卡密展示给用户。
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs text-muted-foreground">卡密内容</label>
+            <textarea
+              className="min-h-28 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              value={editingCardKeyContent}
+              onChange={(e) => setEditingCardKeyContent(e.target.value)}
+              placeholder="请输入新的卡密内容"
+              disabled={updatingCardKey}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-input"
+              checked={resendDeliveryEmail}
+              onChange={(e) => setResendDeliveryEmail(e.target.checked)}
+              disabled={updatingCardKey}
+            />
+            修改后重发发货邮件给用户
+          </label>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              className="rounded-lg border border-input bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              onClick={() => {
+                setEditingCardKey(null)
+                setEditingCardKeyContent("")
+                setResendDeliveryEmail(false)
+              }}
+              disabled={updatingCardKey}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              onClick={handleUpdateCardKey}
+              disabled={updatingCardKey}
+            >
+              {updatingCardKey ? "保存中..." : "保存"}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Mark Paid Confirmation */}

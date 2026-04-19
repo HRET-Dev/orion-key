@@ -4,19 +4,24 @@ import com.orionkey.common.PageResult;
 import com.orionkey.constant.ErrorCode;
 import com.orionkey.constant.OrderStatus;
 import com.orionkey.constant.OrderType;
+import com.orionkey.entity.CardKey;
 import com.orionkey.entity.Order;
 import com.orionkey.entity.OrderItem;
 import com.orionkey.entity.User;
 import com.orionkey.exception.BusinessException;
+import com.orionkey.repository.CardKeyRepository;
 import com.orionkey.repository.OrderItemRepository;
 import com.orionkey.repository.OrderRepository;
 import com.orionkey.repository.UserRepository;
 import com.orionkey.service.AdminOrderService;
+import com.orionkey.service.EmailService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -27,7 +32,9 @@ public class AdminOrderServiceImpl implements AdminOrderService {
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
+    private final CardKeyRepository cardKeyRepository;
     private final UserRepository userRepository;
+    private final EmailService emailService;
 
     @Override
     public PageResult<?> listOrders(String status, String orderType, String paymentMethod,
@@ -70,6 +77,45 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         order.setStatus(OrderStatus.PAID);
         order.setPaidAt(LocalDateTime.now());
         orderRepository.save(order);
+    }
+
+    @Override
+    @Transactional
+    public void updateDeliveredCardKey(UUID orderId, UUID cardKeyId, String content, boolean resendEmail) {
+        String normalizedContent = content == null ? "" : content.trim();
+        if (normalizedContent.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "卡密内容不能为空");
+        }
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND, "订单不存在"));
+        if (order.getStatus() != OrderStatus.DELIVERED) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "仅已发货订单可修改卡密");
+        }
+
+        CardKey cardKey = cardKeyRepository.findById(cardKeyId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "卡密不存在"));
+        if (!orderId.equals(cardKey.getOrderId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该卡密不属于当前订单");
+        }
+
+        boolean duplicate = cardKeyRepository.existsByContentAndProductIdAndSpecIdAndIdNot(
+                cardKey.getId(), normalizedContent, cardKey.getProductId(), cardKey.getSpecId());
+        if (duplicate) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该卡密内容已存在于同商品规格中");
+        }
+
+        cardKey.setContent(normalizedContent);
+        cardKeyRepository.save(cardKey);
+
+        if (resendEmail) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    emailService.sendDeliveryEmail(orderId);
+                }
+            });
+        }
     }
 
     private Map<String, Object> toAdminOrder(Order o) {

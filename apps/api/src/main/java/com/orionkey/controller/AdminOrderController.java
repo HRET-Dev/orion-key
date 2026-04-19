@@ -6,6 +6,7 @@ import com.orionkey.service.AdminOrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -37,6 +38,21 @@ public class AdminOrderController {
     @PostMapping("/{id}/mark-paid")
     public ApiResponse<Void> markPaid(@PathVariable UUID id) {
         adminOrderService.markPaid(id);
+        return ApiResponse.success();
+    }
+
+    @LogOperation(action = "order.update_card_key", targetType = "ORDER", targetId = "#id", detail = "'修改订单卡密'")
+    @PutMapping("/{id}/card-keys/{cardKeyId}")
+    public ApiResponse<Void> updateDeliveredCardKey(@PathVariable UUID id,
+                                                    @PathVariable UUID cardKeyId,
+                                                    @RequestBody Map<String, Object> request) {
+        Object content = request.get("content");
+        Object resendEmail = request.get("resend_email");
+        boolean resend = (resendEmail instanceof Boolean && (Boolean) resendEmail)
+                || (resendEmail instanceof String && Boolean.parseBoolean((String) resendEmail));
+        adminOrderService.updateDeliveredCardKey(id, cardKeyId,
+                content instanceof String ? (String) content : null,
+                resend);
         return ApiResponse.success();
     }
 }

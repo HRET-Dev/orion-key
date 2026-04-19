@@ -12,4 +12,6 @@ public interface AdminOrderService {
     Object getOrderDetail(UUID id);
 
     void markPaid(UUID id);
+
+    void updateDeliveredCardKey(UUID orderId, UUID cardKeyId, String content, boolean resendEmail);
 }

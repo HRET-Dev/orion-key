@@ -526,6 +526,8 @@ export const adminOrderApi = {
     request<AdminOrderItem>(`/admin/orders/${id}`),
   markPaid: (id: string) =>
     request<null>(`/admin/orders/${id}/mark-paid`, { method: "POST" }),
+  updateCardKey: (orderId: string, cardKeyId: string, data: { content: string; resend_email?: boolean }) =>
+    request<null>(`/admin/orders/${orderId}/card-keys/${cardKeyId}`, { method: "PUT", body: JSON.stringify(data) }),
 }
 
 // ============================================================
