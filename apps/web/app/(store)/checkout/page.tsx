@@ -91,10 +91,16 @@ export default function CheckoutPage() {
         payUrl += `&crypto_amount=${encodeURIComponent(result.payment.crypto_amount || "")}`
         payUrl += `&chain=${encodeURIComponent(result.payment.chain || "")}`
       }
+      const paymentCode = selectedPayment.toLowerCase()
+      // 码支付默认使用网关收银台页面，不走站内嵌入页
+      if (paymentCode.startsWith("codepay_") && payUrlH5) {
+        sessionStorage.setItem(`pay_redirected_${result.payment.order_id}`, "1")
+        window.location.href = payUrlH5
+        return
+      }
       // 移动端非 USDT 非微信：直接跳转网关支付页，避免中间经过 pay 页面的延迟
       // 导致支付宝 H5 session token 过期（"会话超时"）
       // 微信支付的 jspay 走 JSAPI（需微信浏览器），普通浏览器不能跳转，只能到 pay 页展示二维码
-      const paymentCode = selectedPayment.toLowerCase()
       const isWechat = paymentCode.includes("wechat") || paymentCode.includes("wxpay")
       if (isMobileDevice() && payUrlH5 && !selectedPayment.startsWith("usdt_") && !isWechat) {
         sessionStorage.setItem(`pay_redirected_${result.payment.order_id}`, "1")
