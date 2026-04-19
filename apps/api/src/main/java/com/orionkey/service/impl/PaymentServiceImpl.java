@@ -70,15 +70,21 @@ public class PaymentServiceImpl implements PaymentService {
             return buildResult(order);
         }
 
+        Map<String, Object> immediateResult = null;
+
         // 4. 按 providerType 路由到不同的支付实现
         String providerType = channel.getProviderType();
         switch (providerType) {
-            case "epay" -> createEpayPayment(channel, order, paymentMethod, amount, device);
-            case "codepay" -> createEpayPayment(channel, order, paymentMethod, amount, device);
+            case "epay" -> immediateResult = createEpayPayment(channel, order, paymentMethod, amount, device);
+            case "codepay" -> immediateResult = createEpayPayment(channel, order, paymentMethod, amount, device);
             case "native_alipay" -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "原生支付宝支付尚未实现，请使用易支付渠道");
             case "native_wxpay" -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "原生微信支付尚未实现，请使用易支付渠道");
             case "usdt" -> createBepusdtPayment(channel, order, amount);
             default -> throw new BusinessException(ErrorCode.CHANNEL_UNAVAILABLE, "不支持的支付提供商类型: " + providerType);
+        }
+
+        if (immediateResult != null) {
+            return immediateResult;
         }
 
         return buildResult(order);
@@ -124,7 +130,7 @@ public class PaymentServiceImpl implements PaymentService {
     /**
      * 易支付下单流程
      */
-    private void createEpayPayment(PaymentChannel channel, Order order, String paymentMethod, BigDecimal amount, String device) {
+    private Map<String, Object> createEpayPayment(PaymentChannel channel, Order order, String paymentMethod, BigDecimal amount, String device) {
         Map<String, String> cfg = parseConfigData(channel.getConfigData());
         String epayType = cfg.get("epay_type");
         if (epayType == null || epayType.isBlank()) epayType = cfg.get("type");
@@ -135,7 +141,12 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         ChannelConfig config = buildChannelConfig(channel);
+        boolean mapiEnabled = parseBooleanConfig(cfg.get("mapi_enabled"), true);
         String productName = buildProductName(order.getId());
+
+        if (!mapiEnabled) {
+            return buildHostedCheckoutResult(channel, config, order, epayType, productName, amount);
+        }
 
         EpayResult epayResult = epayService.createPayment(
                 config,
@@ -147,11 +158,20 @@ public class PaymentServiceImpl implements PaymentService {
                 device
         );
 
+        if ((epayResult.payUrl() == null || epayResult.payUrl().isBlank())
+                && (epayResult.qrcodeUrl() == null || epayResult.qrcodeUrl().isBlank())) {
+            throw new BusinessException(
+                    ErrorCode.WEBHOOK_VERIFY_FAIL,
+                    "支付创建失败：网关未返回可用的支付链接或二维码，请检查码支付渠道配置和返回格式"
+            );
+        }
+
         // 分别存储：payUrl 是 H5 跳转链接，qrcodeUrl 是二维码 URL
         order.setPaymentUrl(epayResult.payUrl());
         order.setQrcodeUrl(epayResult.qrcodeUrl());
         order.setEpayTradeNo(epayResult.tradeNo());
         orderRepository.save(order);
+        return null;
     }
 
     /**
@@ -187,6 +207,55 @@ public class PaymentServiceImpl implements PaymentService {
             result.put("chain", order.getUsdtChain());
         }
         return result;
+    }
+
+    private Map<String, Object> buildHostedCheckoutResult(PaymentChannel channel,
+                                                          ChannelConfig config,
+                                                          Order order,
+                                                          String epayType,
+                                                          String productName,
+                                                          BigDecimal amount) {
+        String dynamicReturnUrl = appendOrderId(config.returnUrl(), order.getId().toString());
+
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("pid", config.pid());
+        fields.put("type", epayType);
+        fields.put("out_trade_no", order.getId().toString());
+        fields.put("notify_url", config.notifyUrl());
+        fields.put("return_url", dynamicReturnUrl);
+        fields.put("name", productName);
+        fields.put("money", amount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString());
+        fields.put("sign", epayService.buildSign(config.key(), fields));
+        fields.put("sign_type", "MD5");
+
+        Map<String, Object> result = buildResult(order);
+        result.put("hosted_page_action", buildHostedCheckoutAction(config.apiUrl(), channel.getProviderType()));
+        result.put("hosted_page_fields", fields);
+        return result;
+    }
+
+    private String buildHostedCheckoutAction(String apiUrl, String providerType) {
+        String normalized = apiUrl + (apiUrl.endsWith("/") ? "" : "/");
+        return "codepay".equals(providerType) ? normalized + "api.php" : normalized + "submit.php";
+    }
+
+    private boolean parseBooleanConfig(String value, boolean defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        return switch (value.trim().toLowerCase()) {
+            case "1", "true", "yes", "on" -> true;
+            case "0", "false", "no", "off" -> false;
+            default -> defaultValue;
+        };
+    }
+
+    private String appendOrderId(String returnUrl, String orderId) {
+        if (returnUrl == null || returnUrl.isBlank() || orderId == null || orderId.isBlank()) {
+            return returnUrl;
+        }
+        String separator = returnUrl.contains("?") ? "&" : "?";
+        return returnUrl + separator + "orderId=" + orderId;
     }
 
     private String buildProductName(UUID orderId) {

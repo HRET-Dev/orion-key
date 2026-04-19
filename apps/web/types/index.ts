@@ -183,6 +183,8 @@ export interface PaymentCreateResult {
   payment_url: string
   qrcode_url?: string
   pay_url?: string
+  hosted_page_action?: string
+  hosted_page_fields?: Record<string, string>
   expires_at: string
   // USDT 新增（仅 USDT 渠道返回）
   wallet_address?: string
@@ -235,6 +237,7 @@ export interface PaymentChannelConfig {
   api_url?: string
   notify_url?: string
   return_url?: string
+  mapi_enabled?: string
   // 原生支付宝
   appid?: string
   private_key?: string
@@ -248,7 +251,7 @@ export interface PaymentChannelConfig {
   // USDT
   wallet_address?: string
   rate_api_url?: string
-  [key: string]: string | undefined
+  [key: string]: string | boolean | undefined
 }
 
 export interface PaymentChannelItem {

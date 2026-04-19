@@ -8,7 +8,16 @@ import { useLocale, useAuth, useCart } from "@/lib/context"
 import { orderApi, withMockFallback, getApiErrorMessage, setTurnstileHeaders } from "@/services/api"
 import { mockCreateOrder } from "@/lib/mock-data"
 import { Turnstile, useTurnstile } from "@/components/shared/turnstile"
-import { cn, validateEmail, generateIdempotencyKey, getCurrencySymbol, detectPaymentDevice, isMobileDevice } from "@/lib/utils"
+import {
+  cn,
+  validateEmail,
+  generateIdempotencyKey,
+  getCurrencySymbol,
+  detectPaymentDevice,
+  isMobileDevice,
+  isPaymentRedirectTarget,
+  postToPaymentPage,
+} from "@/lib/utils"
 import { PaymentSelector } from "@/components/shared/payment-selector"
 import type { ProductDetail, ProductSpec, PaymentChannelItem } from "@/types"
 
@@ -92,11 +101,16 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
         () => mockCreateOrder(email, selectedPayment)
       )
       toast.success(t("checkout.processingOrder"))
+      if (result.payment.hosted_page_action && result.payment.hosted_page_fields) {
+        postToPaymentPage(result.payment.hosted_page_action, result.payment.hosted_page_fields)
+        return
+      }
       const payUrlH5 = result.payment.pay_url || ""
+      const redirectTarget = isPaymentRedirectTarget(payUrlH5) ? payUrlH5 : ""
       const qr = result.payment.qrcode_url || result.payment.payment_url || ""
       let payUrl = `/pay/${result.payment.order_id}?method=${selectedPayment}`
       if (qr) payUrl += `&qr=${encodeURIComponent(qr)}`
-      if (payUrlH5) payUrl += `&payurl=${encodeURIComponent(payUrlH5)}`
+      if (redirectTarget) payUrl += `&payurl=${encodeURIComponent(redirectTarget)}`
       // USDT 支付额外参数
       if (result.payment.wallet_address) {
         payUrl += `&wallet=${encodeURIComponent(result.payment.wallet_address)}`
@@ -105,18 +119,18 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
       }
       const paymentCode = selectedPayment.toLowerCase()
       // 码支付默认使用网关收银台页面，不走站内嵌入页
-      if (paymentCode.startsWith("codepay_") && payUrlH5) {
+      if (paymentCode.startsWith("codepay_") && redirectTarget) {
         sessionStorage.setItem(`pay_redirected_${result.payment.order_id}`, "1")
-        window.location.href = payUrlH5
+        window.location.href = redirectTarget
         return
       }
       // 移动端非 USDT 非微信：直接跳转网关支付页，避免中间经过 pay 页面的延迟
       // 导致支付宝 H5 session token 过期（"会话超时"）
       // 微信支付的 jspay 走 JSAPI（需微信浏览器），普通浏览器不能跳转，只能到 pay 页展示二维码
       const isWechat = paymentCode.includes("wechat") || paymentCode.includes("wxpay")
-      if (isMobileDevice() && payUrlH5 && !selectedPayment.startsWith("usdt_") && !isWechat) {
+      if (isMobileDevice() && redirectTarget && !selectedPayment.startsWith("usdt_") && !isWechat) {
         sessionStorage.setItem(`pay_redirected_${result.payment.order_id}`, "1")
-        window.location.href = payUrlH5
+        window.location.href = redirectTarget
         return
       }
       router.push(payUrl)

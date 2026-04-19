@@ -23,7 +23,7 @@ import { toast } from "sonner"
 import { useLocale, useCart, useSiteConfig } from "@/lib/context"
 import { orderApi } from "@/services/api"
 import type { OrderStatus } from "@/types"
-import { cn, detectPaymentDevice, isMobileDevice } from "@/lib/utils"
+import { cn, detectPaymentDevice, isMobileDevice, isPaymentRedirectTarget, postToPaymentPage } from "@/lib/utils"
 import { PaymentIcon, getPaymentLabel, getPaymentBrandColor, getPaymentScanHint } from "@/components/shared/payment-icon"
 
 const POLL_INTERVAL = 3000 // 3 seconds
@@ -80,7 +80,7 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
     }
 
     const payurlFromParam = searchParams.get("payurl")
-    if (payurlFromParam) {
+    if (payurlFromParam && isPaymentRedirectTarget(payurlFromParam)) {
       setPayUrlH5(payurlFromParam)
     }
 
@@ -206,15 +206,20 @@ export default function PaymentPage({ params }: { params: Promise<{ orderId: str
     try {
       const device = detectPaymentDevice()
       const result = await orderApi.repay(orderId, device)
+      if (result.hosted_page_action && result.hosted_page_fields) {
+        postToPaymentPage(result.hosted_page_action, result.hosted_page_fields)
+        return
+      }
       // 更新支付链接
-      if (result.pay_url) setPayUrlH5(result.pay_url)
+      const redirectTarget = result.pay_url && isPaymentRedirectTarget(result.pay_url) ? result.pay_url : ""
+      setPayUrlH5(redirectTarget)
       if (result.qrcode_url) setQrcodeUrl(result.qrcode_url)
       else if (result.payment_url) setQrcodeUrl(result.payment_url)
 
-      if ((isCodepayPayment || (isMobile && !isWechatMobile)) && result.pay_url) {
+      if ((isCodepayPayment || (isMobile && !isWechatMobile)) && redirectTarget) {
         // 清除跳转标记，允许重新跳转（微信走 JSAPI 不能跳转，只刷新二维码）
         sessionStorage.removeItem(`pay_redirected_${orderId}`)
-        window.location.href = result.pay_url
+        window.location.href = redirectTarget
       } else {
         toast.success(t("payment.statusRefreshed"))
       }

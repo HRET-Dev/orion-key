@@ -17,8 +17,10 @@ import type { PaymentChannelItem, PaymentChannelConfig, ProviderType } from "@/t
 interface ConfigField {
   key: string
   label: string
-  placeholder: string
-  type?: "password" | "text"
+  placeholder?: string
+  type?: "password" | "text" | "checkbox"
+  defaultValue?: string
+  description?: string
 }
 
 interface ProviderOption {
@@ -45,6 +47,13 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
       { key: "api_url", label: "API 地址", placeholder: "例如：https://pay.example.com/" },
       { key: "notify_url", label: "异步回调地址", placeholder: "例如：https://yourdomain.com/api/payments/webhook/epay" },
       { key: "return_url", label: "同步跳转地址", placeholder: "例如：https://yourdomain.com/order/query" },
+      {
+        key: "mapi_enabled",
+        label: "开启 MAPI 站内支付",
+        type: "checkbox",
+        defaultValue: "true",
+        description: "开启：调用 MAPI 并在站内展示二维码；关闭：直接跳转到网关托管支付页。",
+      },
     ],
   },
   {
@@ -62,6 +71,13 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
       { key: "notify_url", label: "异步回调地址", placeholder: "例如：https://yourdomain.com/api/payments/webhook/epay" },
       { key: "return_url", label: "同步跳转地址", placeholder: "例如：https://yourdomain.com/order/query" },
       { key: "epay_type", label: "支付类型", placeholder: "alipay 或 wxpay（可选，默认按渠道自动识别）" },
+      {
+        key: "mapi_enabled",
+        label: "开启 MAPI 站内支付",
+        type: "checkbox",
+        defaultValue: "true",
+        description: "开启：调用 MAPI 并在站内展示二维码；关闭：直接跳转到码支付/网关托管页。",
+      },
     ],
   },
   {
@@ -242,7 +258,13 @@ export default function AdminPaymentChannelsPage() {
       channel_code: autoChannel?.code ?? "",
       channel_name: autoChannel?.name ?? "",
     }))
-    setConfigData({})
+    const defaults: Record<string, string> = {}
+    for (const field of provider.configFields) {
+      if (field.defaultValue !== undefined) {
+        defaults[field.key] = field.defaultValue
+      }
+    }
+    setConfigData(defaults)
     setProviderDropdownOpen(false)
     setFormErrors(prev => ({ ...prev, provider: false }))
   }
@@ -631,13 +653,32 @@ export default function AdminPaymentChannelsPage() {
               {currentProvider.configFields.map((field) => (
                 <div key={field.key} className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-muted-foreground">{field.label}</label>
-                  <input
-                    type={field.type === "password" && !showKeys ? "password" : "text"}
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                    placeholder={field.placeholder}
-                    value={configData[field.key] ?? ""}
-                    onChange={(e) => handleConfigChange(field.key, e.target.value)}
-                  />
+                  {field.type === "checkbox" ? (
+                    <label className="flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm text-foreground">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-input"
+                        checked={(configData[field.key] ?? field.defaultValue ?? "false") === "true"}
+                        onChange={(e) => handleConfigChange(field.key, e.target.checked ? "true" : "false")}
+                      />
+                      <span className="text-sm text-foreground">
+                        {(configData[field.key] ?? field.defaultValue ?? "false") === "true" ? "已开启" : "已关闭"}
+                      </span>
+                    </label>
+                  ) : (
+                    <input
+                      type={field.type === "password" && !showKeys ? "password" : "text"}
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      placeholder={field.placeholder}
+                      value={configData[field.key] ?? field.defaultValue ?? ""}
+                      onChange={(e) => handleConfigChange(field.key, e.target.value)}
+                    />
+                  )}
+                  {field.description && (
+                    <p className="text-[11px] leading-4 text-muted-foreground">
+                      {field.description}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

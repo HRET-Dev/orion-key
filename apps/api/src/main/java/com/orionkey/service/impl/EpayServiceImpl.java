@@ -17,6 +17,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -137,16 +138,16 @@ public class EpayServiceImpl implements EpayService {
         int code = parseCode(body.get("code"));
         String msg = firstNonBlankValue(body, "msg", "message");
         String tradeNo = firstNonBlankValue(body, "trade_no", "tradeNo");
-        String payUrl = firstNonBlankValue(body, "payurl", "pay_url", "payment_url", "url", "payUrl");
-        String qrcode = firstNonBlankValue(body, "qrcode", "qr_code", "qrCode", "qrcode_url", "qr_url", "qrurl", "qr");
+        String payUrl = firstNavigableValue(body, "payurl", "pay_url", "payment_url", "url", "payUrl");
+        String qrcode = firstNonBlankValue(body, "qrcode", "qr_code", "qrCode", "qrcode_url", "qr_code_url", "qr_url", "qrurl", "qr");
         String urlscheme = firstNonBlankValue(body, "urlscheme", "url_scheme");
 
         // 部分网关会把 payurl/qrcode 放在 data 字段内，做兼容处理。
         Map<String, Object> dataMap = extractDataMap(body.get("data"));
         if (dataMap != null) {
             if (tradeNo == null) tradeNo = firstNonBlankValue(dataMap, "trade_no", "tradeNo");
-            if (payUrl == null) payUrl = firstNonBlankValue(dataMap, "payurl", "pay_url", "payment_url", "url", "payUrl");
-            if (qrcode == null) qrcode = firstNonBlankValue(dataMap, "qrcode", "qr_code", "qrCode", "qrcode_url", "qr_url", "qrurl", "qr");
+            if (payUrl == null) payUrl = firstNavigableValue(dataMap, "payurl", "pay_url", "payment_url", "url", "payUrl");
+            if (qrcode == null) qrcode = firstNonBlankValue(dataMap, "qrcode", "qr_code", "qrCode", "qrcode_url", "qr_code_url", "qr_url", "qrurl", "qr");
             if (urlscheme == null) urlscheme = firstNonBlankValue(dataMap, "urlscheme", "url_scheme");
         }
 
@@ -195,6 +196,18 @@ public class EpayServiceImpl implements EpayService {
         return null;
     }
 
+    private String firstNavigableValue(Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value == null) continue;
+            String str = value.toString();
+            if (str.isBlank()) continue;
+            if (isNavigableUrl(str)) return str;
+            log.warn("Ignoring non-navigable payUrl candidate from gateway: key={}, value={}", key, str);
+        }
+        return null;
+    }
+
     private EpayResult buildResult(GatewayResponse resp, String device) {
         String resultQrcode = resp.qrcode != null ? resp.qrcode : resp.urlscheme;
         String effectivePayUrl = resp.payUrl;
@@ -205,11 +218,23 @@ public class EpayServiceImpl implements EpayService {
             log.info("Epay: gateway returned no payUrl, using qrcode URL as mobile redirect: {}", effectivePayUrl);
         }
 
-        return new EpayResult(resp.code, resp.msg, resp.tradeNo, effectivePayUrl, resultQrcode);
+        return new EpayResult(resp.code, resp.msg, resp.tradeNo, effectivePayUrl, resultQrcode, null, null);
     }
 
     private boolean isInvalidSignature(String msg) {
         return msg != null && msg.toLowerCase(Locale.ROOT).contains("invalid signature");
+    }
+
+    private boolean isNavigableUrl(String value) {
+        String normalized = value.trim();
+        if (normalized.isEmpty()) return false;
+        if (normalized.startsWith("//")) return true;
+        try {
+            URI uri = URI.create(normalized);
+            return uri.getScheme() != null;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     @Override
