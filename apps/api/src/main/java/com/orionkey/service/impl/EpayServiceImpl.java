@@ -92,7 +92,8 @@ public class EpayServiceImpl implements EpayService {
                         throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：响应格式异常");
                     }
 
-                    int code = body.get("code") instanceof Number n ? n.intValue() : -1;
+                    Object codeObj = body.get("code");
+                    int code = codeObj instanceof Number ? ((Number) codeObj).intValue() : -1;
                     String msg = body.get("msg") != null ? body.get("msg").toString() : "";
                     String tradeNo = body.get("trade_no") != null ? body.get("trade_no").toString() : "";
                     String payUrl = body.get("payurl") != null ? body.get("payurl").toString() : null;
