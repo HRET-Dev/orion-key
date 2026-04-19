@@ -44,10 +44,6 @@ public class EpayServiceImpl implements EpayService {
         params.put("clientip", clientIp != null ? clientIp : "127.0.0.1");
         params.put("device", device != null && !device.isBlank() ? device : "pc");
 
-        String sign = buildSign(config.key(), params);
-        params.put("sign", sign);
-        params.put("sign_type", "MD5");
-
         log.info("Epay createPayment: outTradeNo={}, type={}, money={}, apiUrl={}", outTradeNo, type, money, config.apiUrl());
 
         // Build form-urlencoded body
@@ -60,66 +56,81 @@ public class EpayServiceImpl implements EpayService {
 
         String url = config.apiUrl() + (config.apiUrl().endsWith("/") ? "" : "/") + "mapi.php";
 
-        // 带重试的网络调用（最多重试 2 次，间隔 1 秒）
+        // 带重试的网络调用（每种签名策略最多重试 2 次，间隔 1 秒）
         int maxRetries = 2;
         Exception lastException = null;
+        List<String> signCandidates = buildSignCandidates(config.key(), params);
 
-        for (int attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-                if (attempt > 0) {
-                    log.info("Epay API retry attempt {}/{}", attempt, maxRetries);
-                    Thread.sleep(1000);
-                }
+        for (int signIndex = 0; signIndex < signCandidates.size(); signIndex++) {
+            String currentSign = signCandidates.get(signIndex);
+            formData.set("sign", currentSign);
+            formData.set("sign_type", "MD5");
+            log.debug("Epay request sign strategy index={}, sign={}", signIndex, currentSign);
 
-                ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
-                String responseBody = response.getBody();
-
-                if (responseBody == null || responseBody.isBlank()) {
-                    log.error("Epay API returned null/empty body");
-                    throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：响应为空");
-                }
-
-                log.debug("Epay API raw response: {}", responseBody);
-
-                Map<String, Object> body;
+            for (int attempt = 0; attempt <= maxRetries; attempt++) {
                 try {
-                    body = objectMapper.readValue(responseBody, new TypeReference<>() {});
-                } catch (Exception parseEx) {
-                    log.error("Epay API response is not valid JSON: {}", responseBody);
-                    throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：响应格式异常");
+                    if (attempt > 0) {
+                        log.info("Epay API retry attempt {}/{} (sign strategy index={})", attempt, maxRetries, signIndex);
+                        Thread.sleep(1000);
+                    }
+
+                    ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+                    String responseBody = response.getBody();
+
+                    if (responseBody == null || responseBody.isBlank()) {
+                        log.error("Epay API returned null/empty body");
+                        throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：响应为空");
+                    }
+
+                    log.debug("Epay API raw response: {}", responseBody);
+
+                    Map<String, Object> body;
+                    try {
+                        body = objectMapper.readValue(responseBody, new TypeReference<>() {});
+                    } catch (Exception parseEx) {
+                        log.error("Epay API response is not valid JSON: {}", responseBody);
+                        throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：响应格式异常");
+                    }
+
+                    int code = body.get("code") instanceof Number n ? n.intValue() : -1;
+                    String msg = body.get("msg") != null ? body.get("msg").toString() : "";
+                    String tradeNo = body.get("trade_no") != null ? body.get("trade_no").toString() : "";
+                    String payUrl = body.get("payurl") != null ? body.get("payurl").toString() : null;
+                    String qrcode = body.get("qrcode") != null ? body.get("qrcode").toString() : null;
+                    String urlscheme = body.get("urlscheme") != null ? body.get("urlscheme").toString() : null;
+
+                    log.info("Epay API response: code={}, msg={}, tradeNo={}, payUrl={}, qrcode={}", code, msg, tradeNo, payUrl, qrcode);
+
+                    if (code != 1) {
+                        if (msg != null && msg.toLowerCase().contains("invalid signature")) {
+                            if (signIndex < signCandidates.size() - 1) {
+                                log.warn("Epay signature rejected by gateway, switching sign strategy to index={} and retrying", signIndex + 1);
+                                break; // 切下一种签名策略
+                            }
+                            throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL,
+                                    "支付创建失败：网关验签失败，请检查 PID/KEY 与签名规则");
+                        }
+                        // 其他业务错误不重试
+                        log.error("Epay API error: code={}, msg={}", code, msg);
+                        throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：" + msg);
+                    }
+
+                    String resultQrcode = qrcode != null ? qrcode : urlscheme;
+
+                    // 网关未返回 payUrl 且为移动端请求时，将 qrcode（收银台页面 URL）作为 H5 跳转入口
+                    String effectivePayUrl = payUrl;
+                    if (effectivePayUrl == null && device != null && !"pc".equals(device) && resultQrcode != null) {
+                        effectivePayUrl = resultQrcode;
+                        log.info("Epay: gateway returned no payUrl, using qrcode URL as mobile redirect: {}", effectivePayUrl);
+                    }
+
+                    return new EpayResult(code, msg, tradeNo, effectivePayUrl, resultQrcode);
+                } catch (BusinessException e) {
+                    throw e; // 业务异常直接抛出，不重试
+                } catch (Exception e) {
+                    lastException = e;
+                    log.warn("Epay API attempt {} failed (sign strategy index={}): {}", attempt + 1, signIndex, e.getMessage());
                 }
-
-                int code = body.get("code") instanceof Number n ? n.intValue() : -1;
-                String msg = body.get("msg") != null ? body.get("msg").toString() : "";
-                String tradeNo = body.get("trade_no") != null ? body.get("trade_no").toString() : "";
-                String payUrl = body.get("payurl") != null ? body.get("payurl").toString() : null;
-                String qrcode = body.get("qrcode") != null ? body.get("qrcode").toString() : null;
-                String urlscheme = body.get("urlscheme") != null ? body.get("urlscheme").toString() : null;
-
-                log.info("Epay API response: code={}, msg={}, tradeNo={}, payUrl={}, qrcode={}", code, msg, tradeNo, payUrl, qrcode);
-
-                if (code != 1) {
-                    // 业务错误不重试
-                    log.error("Epay API error: code={}, msg={}", code, msg);
-                    throw new BusinessException(ErrorCode.WEBHOOK_VERIFY_FAIL, "支付创建失败：" + msg);
-                }
-
-                String resultQrcode = qrcode != null ? qrcode : urlscheme;
-
-                // 网关未返回 payUrl 且为移动端请求时，将 qrcode（收银台页面 URL）作为 H5 跳转入口
-                String effectivePayUrl = payUrl;
-                if (effectivePayUrl == null && device != null && !"pc".equals(device) && resultQrcode != null) {
-                    effectivePayUrl = resultQrcode;
-                    log.info("Epay: gateway returned no payUrl, using qrcode URL as mobile redirect: {}", effectivePayUrl);
-                }
-
-                return new EpayResult(code, msg, tradeNo, effectivePayUrl, resultQrcode);
-
-            } catch (BusinessException e) {
-                throw e; // 业务异常直接抛出，不重试
-            } catch (Exception e) {
-                lastException = e;
-                log.warn("Epay API attempt {} failed: {}", attempt + 1, e.getMessage());
             }
         }
 
@@ -129,6 +140,18 @@ public class EpayServiceImpl implements EpayService {
 
     @Override
     public String buildSign(String merchantKey, Map<String, String> params) {
+        return signWithKeyMode(merchantKey, params, false, false);
+    }
+
+    private String buildSignKeyParam(String merchantKey, Map<String, String> params) {
+        return signWithKeyMode(merchantKey, params, true, false);
+    }
+
+    private String buildSignUpper(String merchantKey, Map<String, String> params, boolean keyAsParam) {
+        return signWithKeyMode(merchantKey, params, keyAsParam, true);
+    }
+
+    private String signWithKeyMode(String merchantKey, Map<String, String> params, boolean keyAsParam, boolean upperCase) {
         // 1. Filter out sign, sign_type, and empty values
         TreeMap<String, String> sorted = new TreeMap<>();
         for (Map.Entry<String, String> entry : params.entrySet()) {
@@ -146,11 +169,26 @@ public class EpayServiceImpl implements EpayService {
             sb.append(entry.getKey()).append('=').append(entry.getValue());
         }
 
-        // 3. Append merchant key directly
-        sb.append(merchantKey);
+        // 3. Append merchant key
+        if (keyAsParam) {
+            if (!sb.isEmpty()) sb.append('&');
+            sb.append("key=").append(merchantKey);
+        } else {
+            sb.append(merchantKey);
+        }
 
         // 4. MD5 hash
-        return md5(sb.toString());
+        String sign = md5(sb.toString());
+        return upperCase ? sign.toUpperCase(Locale.ROOT) : sign;
+    }
+
+    private List<String> buildSignCandidates(String merchantKey, Map<String, String> params) {
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        set.add(buildSign(merchantKey, params));                 // 原有规则
+        set.add(buildSignKeyParam(merchantKey, params));         // ...&key=xxx
+        set.add(buildSignUpper(merchantKey, params, false));     // 大写 MD5
+        set.add(buildSignUpper(merchantKey, params, true));      // ...&key=xxx + 大写 MD5
+        return new ArrayList<>(set);
     }
 
     @Override
@@ -189,8 +227,12 @@ public class EpayServiceImpl implements EpayService {
     @Override
     public boolean verifySign(String merchantKey, Map<String, String> params, String sign) {
         if (sign == null || sign.isEmpty()) return false;
-        String expected = buildSign(merchantKey, params);
-        return expected.equalsIgnoreCase(sign);
+        for (String expected : buildSignCandidates(merchantKey, params)) {
+            if (expected.equalsIgnoreCase(sign)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String md5(String input) {
