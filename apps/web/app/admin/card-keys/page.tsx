@@ -25,6 +25,7 @@ import {
   mockProducts,
 } from "@/lib/mock-data"
 import { Modal } from "@/components/ui/modal"
+import { Checkbox } from "@/components/ui/checkbox"
 import type { CardKeyStockSummary, CardKeyListItem, CardImportBatch, ProductCard, ProductDetail, ProductSpec } from "@/types"
 
 export default function AdminCardKeysPage() {
@@ -46,6 +47,7 @@ export default function AdminCardKeysPage() {
   const [detailTotal, setDetailTotal] = useState(0)
   const [detailPage, setDetailPage] = useState(1)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [selectedKeyIds, setSelectedKeyIds] = useState<string[]>([])
 
   // Import form state
   const [importProductId, setImportProductId] = useState("")
@@ -202,9 +204,11 @@ export default function AdminCardKeysPage() {
       )
       setDetailKeys(data.list)
       setDetailTotal(data.pagination.total)
+      setSelectedKeyIds([])
     } catch {
       setDetailKeys([])
       setDetailTotal(0)
+      setSelectedKeyIds([])
     } finally {
       setDetailLoading(false)
     }
@@ -299,6 +303,10 @@ export default function AdminCardKeysPage() {
 
   const handleBatchMigrate = async () => {
     if (!showMigrateModal) return
+    if (selectedKeyIds.length === 0) {
+      toast.error("请选择要迁移的可用卡密")
+      return
+    }
     if (!targetProductId) {
       toast.error("请选择目标商品")
       return
@@ -318,12 +326,11 @@ export default function AdminCardKeysPage() {
     try {
       const result = await withMockFallback(
         () => adminCardKeyApi.batchMigrate({
-          source_product_id: showMigrateModal.product_id,
-          source_spec_id: showMigrateModal.spec_id,
+          card_key_ids: selectedKeyIds,
           target_product_id: targetProductId,
           target_spec_id: targetSpecId || null,
         }),
-        () => ({ migrated_count: showMigrateModal.available })
+        () => ({ migrated_count: selectedKeyIds.length })
       )
       toast.success(`已迁移 ${result.migrated_count} 条可用卡密`)
       const currentDetailItem = detailItem
@@ -365,6 +372,19 @@ export default function AdminCardKeysPage() {
     setTargetSpecs([])
     setTargetRequiresSpec(false)
     setShowMigrateModal(item)
+  }
+
+  const availableKeysOnPage = detailKeys.filter((key) => key.status === "AVAILABLE")
+  const allAvailableSelected = availableKeysOnPage.length > 0 && availableKeysOnPage.every((key) => selectedKeyIds.includes(key.id))
+
+  const toggleKeySelection = (id: string, checked: boolean) => {
+    setSelectedKeyIds((prev) => checked
+      ? (prev.includes(id) ? prev : [...prev, id])
+      : prev.filter((item) => item !== id))
+  }
+
+  const toggleSelectAllAvailable = (checked: boolean) => {
+    setSelectedKeyIds(checked ? availableKeysOnPage.map((key) => key.id) : [])
   }
 
   if (loading) {
@@ -503,16 +523,6 @@ export default function AdminCardKeysPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          {item.available > 0 && (
-                            <button
-                              type="button"
-                              className="rounded-md p-1.5 text-muted-foreground hover:bg-sky-500/10 hover:text-sky-600 transition-colors"
-                              title="迁移可用卡密"
-                              onClick={() => openMigrateModal(item)}
-                            >
-                              <ArrowRightLeft className="h-4 w-4" />
-                            </button>
-                          )}
                           <button
                             type="button"
                             className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
@@ -664,7 +674,7 @@ export default function AdminCardKeysPage() {
       </Modal>
 
       {/* Detail Modal */}
-      <Modal open={showDetailModal} onClose={() => setShowDetailModal(false)} className="max-w-[90vw] w-[1100px]">
+      <Modal open={showDetailModal} onClose={() => { setShowDetailModal(false); setSelectedKeyIds([]) }} className="max-w-[90vw] w-[1100px]">
         <div className="border-b border-border px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-foreground">卡密详情</h2>
@@ -677,7 +687,7 @@ export default function AdminCardKeysPage() {
           </div>
           <button
             type="button"
-            onClick={() => setShowDetailModal(false)}
+            onClick={() => { setShowDetailModal(false); setSelectedKeyIds([]) }}
             className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
           >
             <X className="h-5 w-5" />
@@ -691,58 +701,91 @@ export default function AdminCardKeysPage() {
           ) : detailKeys.length === 0 ? (
             <p className="py-12 text-center text-sm text-muted-foreground">暂无卡密数据</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm table-fixed" onCopy={(e) => { const t = window.getSelection()?.toString(); if (t) { e.clipboardData.setData("text/plain", stripInvisible(t)); e.preventDefault() } }}>
-                <thead>
-                  <tr className="border-b border-border bg-muted/30">
-                    <th className="w-[36%] px-3 py-2 text-left font-medium text-muted-foreground">卡密内容</th>
-                    <th className="w-[8%] px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">状态</th>
-                    <th className="w-[16%] px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">创建时间</th>
-                    <th className="w-[16%] px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">订单号</th>
-                    <th className="w-[16%] px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">售出时间</th>
-                    <th className="w-[8%] px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailKeys.map((key) => (
-                    <tr key={key.id} className="border-b border-border/50 last:border-0">
-                      <td className="px-3 py-2 font-mono text-xs text-foreground break-all">{key.content}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <span className={cn(
-                          "rounded-full px-2 py-0.5 text-xs font-medium",
-                          key.status === "AVAILABLE" && "bg-emerald-500/10 text-emerald-600",
-                          key.status === "SOLD" && "bg-blue-500/10 text-blue-600",
-                          key.status === "LOCKED" && "bg-amber-500/10 text-amber-600",
-                          key.status === "INVALID" && "bg-red-500/10 text-red-600",
-                        )}>
-                          {key.status === "AVAILABLE" ? "可用" : key.status === "SOLD" ? "已售" : key.status === "LOCKED" ? "锁定" : "已作废"}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-                        {new Date(key.created_at).toLocaleString()}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground whitespace-nowrap">
-                        {key.order_id ? key.order_id.slice(0, 8) + "..." : "-"}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-                        {key.sold_at ? new Date(key.sold_at).toLocaleString() : "-"}
-                      </td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap">
-                        {(key.status === "AVAILABLE" || key.status === "LOCKED") && (
-                          <button
-                            type="button"
-                            className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                            title="作废此卡密"
-                            onClick={() => setSingleInvalidateTarget(key)}
-                          >
-                            <Ban className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </td>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  已选择 <span className="font-medium text-foreground">{selectedKeyIds.length}</span> 条可用卡密
+                </p>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 transition-colors disabled:opacity-50"
+                  onClick={() => detailItem && openMigrateModal(detailItem)}
+                  disabled={selectedKeyIds.length === 0}
+                >
+                  <ArrowRightLeft className="h-4 w-4" />
+                  迁移所选卡密
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm table-fixed" onCopy={(e) => { const t = window.getSelection()?.toString(); if (t) { e.clipboardData.setData("text/plain", stripInvisible(t)); e.preventDefault() } }}>
+                  <thead>
+                    <tr className="border-b border-border bg-muted/30">
+                      <th className="w-[6%] px-3 py-2 text-left font-medium text-muted-foreground">
+                        <Checkbox
+                          checked={allAvailableSelected}
+                          onCheckedChange={(checked) => toggleSelectAllAvailable(Boolean(checked))}
+                          aria-label="选择当前页全部可用卡密"
+                          disabled={availableKeysOnPage.length === 0}
+                        />
+                      </th>
+                      <th className="w-[30%] px-3 py-2 text-left font-medium text-muted-foreground">卡密内容</th>
+                      <th className="w-[8%] px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">状态</th>
+                      <th className="w-[16%] px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">创建时间</th>
+                      <th className="w-[16%] px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">订单号</th>
+                      <th className="w-[16%] px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">售出时间</th>
+                      <th className="w-[8%] px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">操作</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {detailKeys.map((key) => (
+                      <tr key={key.id} className="border-b border-border/50 last:border-0">
+                        <td className="px-3 py-2">
+                          {key.status === "AVAILABLE" ? (
+                            <Checkbox
+                              checked={selectedKeyIds.includes(key.id)}
+                              onCheckedChange={(checked) => toggleKeySelection(key.id, Boolean(checked))}
+                              aria-label={`选择卡密 ${key.id}`}
+                            />
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-foreground break-all">{key.content}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 text-xs font-medium",
+                            key.status === "AVAILABLE" && "bg-emerald-500/10 text-emerald-600",
+                            key.status === "SOLD" && "bg-blue-500/10 text-blue-600",
+                            key.status === "LOCKED" && "bg-amber-500/10 text-amber-600",
+                            key.status === "INVALID" && "bg-red-500/10 text-red-600",
+                          )}>
+                            {key.status === "AVAILABLE" ? "可用" : key.status === "SOLD" ? "已售" : key.status === "LOCKED" ? "锁定" : "已作废"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(key.created_at).toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground whitespace-nowrap">
+                          {key.order_id ? key.order_id.slice(0, 8) + "..." : "-"}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                          {key.sold_at ? new Date(key.sold_at).toLocaleString() : "-"}
+                        </td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          {(key.status === "AVAILABLE" || key.status === "LOCKED") && (
+                            <button
+                              type="button"
+                              className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                              title="作废此卡密"
+                              onClick={() => setSingleInvalidateTarget(key)}
+                            >
+                              <Ban className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -825,7 +868,7 @@ export default function AdminCardKeysPage() {
                 <p className="mt-1 text-sm text-muted-foreground">
                   将「{showMigrateModal.product_title}
                   {showMigrateModal.spec_name ? ` — ${showMigrateModal.spec_name}` : ""}」
-                  下的 <span className="font-medium text-foreground">{showMigrateModal.available}</span> 条可用卡密迁移到其他商品。
+                  下选中的 <span className="font-medium text-foreground">{selectedKeyIds.length}</span> 条可用卡密迁移到其他商品。
                 </p>
               )}
             </div>

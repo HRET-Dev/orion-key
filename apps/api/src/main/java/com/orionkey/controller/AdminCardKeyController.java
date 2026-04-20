@@ -66,13 +66,16 @@ public class AdminCardKeyController {
     @LogOperation(action = "cardkey.migrate", targetType = "CARD_KEY", detail = "'批量迁移'")
     @PostMapping("/batch-migrate")
     public ApiResponse<?> batchMigrateCardKeys(@RequestBody Map<String, Object> request) {
-        UUID sourceProductId = UUID.fromString((String) request.get("source_product_id"));
-        UUID sourceSpecId = request.get("source_spec_id") != null
-                ? UUID.fromString((String) request.get("source_spec_id")) : null;
+        @SuppressWarnings("unchecked")
+        var rawIds = (java.util.List<String>) request.get("card_key_ids");
+        if (rawIds == null || rawIds.isEmpty()) {
+            throw new com.orionkey.exception.BusinessException(com.orionkey.constant.ErrorCode.BAD_REQUEST, "请选择要迁移的卡密");
+        }
+        var cardKeyIds = rawIds.stream().map(UUID::fromString).toList();
         UUID targetProductId = UUID.fromString((String) request.get("target_product_id"));
         UUID targetSpecId = request.get("target_spec_id") != null
                 ? UUID.fromString((String) request.get("target_spec_id")) : null;
-        int count = adminCardKeyService.batchMigrateCardKeys(sourceProductId, sourceSpecId, targetProductId, targetSpecId);
+        int count = adminCardKeyService.batchMigrateCardKeys(cardKeyIds, targetProductId, targetSpecId);
         return ApiResponse.success(Map.of("migrated_count", count));
     }
 

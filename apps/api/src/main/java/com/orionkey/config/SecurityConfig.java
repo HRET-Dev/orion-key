@@ -51,6 +51,7 @@ public class SecurityConfig {
                         // Public endpoints
                         .requestMatchers("/auth/captcha", "/auth/register", "/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/products/**", "/categories", "/site/config", "/payment-channels", "/currencies").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/coupons/preview").permitAll()
                         .requestMatchers("/orders/query", "/orders/deliver").permitAll()
                         .requestMatchers(HttpMethod.GET, "/orders/*/status", "/orders/*/export").permitAll()
                         .requestMatchers(HttpMethod.POST, "/orders").permitAll()

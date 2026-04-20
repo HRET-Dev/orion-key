@@ -549,8 +549,7 @@ export const adminCardKeyApi = {
     return request<{ invalidated_count: number }>(`/admin/card-keys/batch-invalidate?${qs}`, { method: "POST" })
   },
   batchMigrate: (data: {
-    source_product_id: string
-    source_spec_id?: string | null
+    card_key_ids: string[]
     target_product_id: string
     target_spec_id?: string | null
   }) =>

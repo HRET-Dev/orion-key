@@ -183,18 +183,35 @@ public class AdminCardKeyServiceImpl implements AdminCardKeyService {
 
     @Override
     @Transactional
-    public int batchMigrateCardKeys(UUID sourceProductId, UUID sourceSpecId, UUID targetProductId, UUID targetSpecId) {
+    public int batchMigrateCardKeys(List<UUID> cardKeyIds, UUID targetProductId, UUID targetSpecId) {
+        if (cardKeyIds == null || cardKeyIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要迁移的卡密");
+        }
+
+        List<UUID> distinctIds = cardKeyIds.stream().distinct().toList();
+        List<CardKey> selectedKeys = cardKeyRepository.findAllById(distinctIds);
+        if (selectedKeys.size() != distinctIds.size()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "部分卡密不存在或已被删除");
+        }
+
+        CardKey firstKey = selectedKeys.getFirst();
+        UUID sourceProductId = firstKey.getProductId();
+        UUID sourceSpecId = firstKey.getSpecId();
+
+        for (CardKey key : selectedKeys) {
+            if (key.getStatus() != CardKeyStatus.AVAILABLE) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "只能迁移可用状态的卡密");
+            }
+            if (!Objects.equals(key.getProductId(), sourceProductId) || !Objects.equals(key.getSpecId(), sourceSpecId)) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "所选卡密必须属于同一个商品库存池");
+            }
+        }
+
         validateProductAndSpec(sourceProductId, sourceSpecId, false);
         Product targetProduct = validateProductAndSpec(targetProductId, targetSpecId, true);
 
         if (Objects.equals(sourceProductId, targetProductId) && Objects.equals(sourceSpecId, targetSpecId)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "源商品和目标商品不能相同");
-        }
-
-        List<CardKey> sourceAvailableKeys = cardKeyRepository.findByProductIdAndOptionalSpecIdAndStatus(
-                sourceProductId, sourceSpecId, CardKeyStatus.AVAILABLE);
-        if (sourceAvailableKeys.isEmpty()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前库存池没有可迁移的卡密");
         }
 
         if (targetProduct.isSpecEnabled() && targetSpecId == null) {
@@ -204,15 +221,19 @@ public class AdminCardKeyServiceImpl implements AdminCardKeyService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "目标商品未启用规格，不能选择目标规格");
         }
 
-        for (CardKey key : sourceAvailableKeys) {
+        for (CardKey key : selectedKeys) {
             if (cardKeyRepository.existsByContentAndProductIdAndSpecId(key.getContent(), targetProductId, targetSpecId)) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
                         "目标商品中已存在重复卡密: " + abbreviateContent(key.getContent()));
             }
         }
 
-        return cardKeyRepository.migrateAvailableByProductIdAndSpecId(
-                sourceProductId, sourceSpecId, targetProductId, targetSpecId, CardKeyStatus.AVAILABLE);
+        for (CardKey key : selectedKeys) {
+            key.setProductId(targetProductId);
+            key.setSpecId(targetSpecId);
+        }
+        cardKeyRepository.saveAll(selectedKeys);
+        return selectedKeys.size();
     }
 
     @Override
