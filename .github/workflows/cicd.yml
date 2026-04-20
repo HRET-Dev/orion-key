@@ -3,6 +3,7 @@
 # ===================================================================
 #
 # 流程：push 到 main/tag → 云端构建两个 Docker 镜像 → 推送 GHCR
+# 发布策略：每次更新 latest，并保留唯一版本 tag（不覆盖）；清理旧版本（仅保留最近 3 个历史 tag）
 #
 # 镜像构建方式：
 #   后端 (Java):  Jib Maven 插件直接产出 Docker 镜像（无需 Dockerfile）
@@ -62,22 +63,22 @@ jobs:
             TAG="${GITHUB_SHA::7}"
           fi
           # Docker 镜像名要求全小写
-          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "tag=$TAG"                                                >> "$GITHUB_OUTPUT"
-          echo "api_image=ghcr.io/$OWNER/orion-key-api:$TAG"            >> "$GITHUB_OUTPUT"
-          echo "web_image=ghcr.io/$OWNER/orion-key-web:$TAG"            >> "$GITHUB_OUTPUT"
+          OWNER_RAW="${{ github.repository_owner }}"
+          OWNER=$(echo "$OWNER_RAW" | tr '[:upper:]' '[:lower:]')
 
-      # ── 后端镜像：Jib 构建（无需 Docker daemon，无需 Dockerfile）──
-      - name: Build & Push API image (Jib)
-        working-directory: apps/api
-        run: |
-          mvn -B -DskipTests \
-            -Djib.to.image="${{ steps.meta.outputs.api_image }}" \
-            -Djib.to.auth.username="${{ github.actor }}" \
-            -Djib.to.auth.password="${{ secrets.GITHUB_TOKEN }}" \
-            compile jib:build
+          API_REPO="ghcr.io/$OWNER/orion-key-api"
+          WEB_REPO="ghcr.io/$OWNER/orion-key-web"
 
-      # ── 前端镜像：Docker 多阶段构建 ──
+          echo "tag=$TAG"                        >> "$GITHUB_OUTPUT"
+          echo "owner_raw=$OWNER_RAW"            >> "$GITHUB_OUTPUT"
+          echo "api_repo=$API_REPO"              >> "$GITHUB_OUTPUT"
+          echo "web_repo=$WEB_REPO"              >> "$GITHUB_OUTPUT"
+          echo "api_image=$API_REPO:$TAG"        >> "$GITHUB_OUTPUT"
+          echo "web_image=$WEB_REPO:$TAG"        >> "$GITHUB_OUTPUT"
+          echo "api_latest=$API_REPO:latest"     >> "$GITHUB_OUTPUT"
+          echo "web_latest=$WEB_REPO:latest"     >> "$GITHUB_OUTPUT"
+          # 每次发布都有唯一 TAG（手动输入 / git tag / sha），latest 会被更新，唯一 TAG 不会被覆盖
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -85,12 +86,81 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # ── 后端镜像：Jib 构建（无需 Docker daemon，无需 Dockerfile）──
+      - name: Build & Push API image (Jib)
+        working-directory: apps/api
+        run: |
+          mvn -B -DskipTests \
+            -Djib.to.image="${{ steps.meta.outputs.api_image }}" \
+            -Djib.to.tags=latest \
+            -Djib.to.auth.username="${{ github.actor }}" \
+            -Djib.to.auth.password="${{ secrets.GITHUB_TOKEN }}" \
+            compile jib:build
+
+      # ── 前端镜像：Docker 多阶段构建 ──
       - name: Build & Push Web image
         uses: docker/build-push-action@v6
         with:
           context: .                # 构建上下文 = 仓库根目录（Dockerfile.web 需要 monorepo 配置文件）
           file: ./Dockerfile.web    # 指定 Dockerfile 路径
           push: true
-          tags: ${{ steps.meta.outputs.web_image }}
+          tags: |
+            ${{ steps.meta.outputs.web_image }}
+            ${{ steps.meta.outputs.web_latest }}
           build-args: |
             BACKEND_URL=${{ vars.BACKEND_URL }}
+
+      - name: Cleanup old images (keep latest + newest 3 history tags)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ steps.meta.outputs.owner_raw }}
+          OWNER_TYPE: ${{ github.event.repository.owner.type }}
+        run: |
+          set -euo pipefail
+
+          if [ "$OWNER_TYPE" = "Organization" ]; then
+            BASE_URL="https://api.github.com/orgs/$OWNER"
+          else
+            BASE_URL="https://api.github.com/users/$OWNER"
+          fi
+
+          cleanup_package() {
+            local package_name="$1"
+            local versions_url="$BASE_URL/packages/container/$package_name/versions?per_page=100"
+            local versions_json
+
+            versions_json="$(curl -fsSL \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "$versions_url")"
+
+            mapfile -t delete_ids < <(
+              echo "$versions_json" | jq -r '
+                [ .[]
+                  | select((.metadata.container.tags // [] | length) > 0)
+                  | select(((.metadata.container.tags // []) | index("latest")) == null)
+                ]
+                | sort_by(.updated_at)
+                | reverse
+                | .[3:]
+                | .[].id
+              '
+            )
+
+            if [ "${#delete_ids[@]}" -eq 0 ]; then
+              echo "No old versions to delete for $package_name"
+              return
+            fi
+
+            for version_id in "${delete_ids[@]}"; do
+              echo "Deleting $package_name version id=$version_id"
+              curl -fsSL -X DELETE \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                "$BASE_URL/packages/container/$package_name/versions/$version_id" >/dev/null
+            done
+          }
+
+          cleanup_package "orion-key-api"
+          cleanup_package "orion-key-web"
