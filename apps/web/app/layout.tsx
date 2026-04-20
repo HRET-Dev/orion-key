@@ -12,8 +12,8 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"),
   title: {
-    template: "%s | Orion Key",
-    default: "Orion Key - Auto Card Delivery",
+    template: "%s",
+    default: "自动发卡平台",
   },
   description: "Automated virtual goods card delivery platform",
   robots: { index: true, follow: true },
