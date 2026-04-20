@@ -2,6 +2,7 @@ package com.orionkey.service;
 
 import com.orionkey.common.PageResult;
 
+import java.util.Map;
 import java.util.UUID;
 
 public interface AdminOrderService {
@@ -14,4 +15,6 @@ public interface AdminOrderService {
     void markPaid(UUID id);
 
     void updateDeliveredCardKey(UUID orderId, UUID cardKeyId, String content, boolean resendEmail);
+
+    Map<String, Object> clearExpiredOrders();
 }

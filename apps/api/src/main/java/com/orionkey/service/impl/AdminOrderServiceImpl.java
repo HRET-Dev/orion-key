@@ -118,6 +118,18 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         }
     }
 
+    @Override
+    @Transactional
+    public Map<String, Object> clearExpiredOrders() {
+        List<UUID> orderIds = orderRepository.findAdminClearableExpiredOrderIds(LocalDateTime.now());
+        if (orderIds.isEmpty()) {
+            return Map.of("deleted_count", 0);
+        }
+        orderItemRepository.deleteByOrderIdIn(orderIds);
+        int deletedCount = orderRepository.deleteByIdInBatch(orderIds);
+        return Map.of("deleted_count", deletedCount);
+    }
+
     private Map<String, Object> toAdminOrder(Order o) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", o.getId());

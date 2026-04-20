@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Modifying;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -33,6 +34,15 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     @Query("SELECT o FROM Order o WHERE o.status = com.orionkey.constant.OrderStatus.PENDING AND o.expiresAt < :now")
     List<Order> findExpiredOrders(@Param("now") LocalDateTime now);
+
+    @Query("SELECT o.id FROM Order o WHERE (" +
+            "o.status = com.orionkey.constant.OrderStatus.EXPIRED OR " +
+            "(o.status = com.orionkey.constant.OrderStatus.PENDING AND o.expiresAt < :now))")
+    List<UUID> findAdminClearableExpiredOrderIds(@Param("now") LocalDateTime now);
+
+    @Modifying
+    @Query("DELETE FROM Order o WHERE o.id IN :orderIds")
+    int deleteByIdInBatch(@Param("orderIds") List<UUID> orderIds);
 
     long countByUserIdAndStatus(UUID userId, OrderStatus status);
 

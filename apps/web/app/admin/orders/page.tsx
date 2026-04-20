@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, ChevronDown, Eye, Download, ChevronLeft, ChevronRight, X, CheckCircle, Pencil } from "lucide-react"
+import { Search, ChevronDown, Eye, Download, ChevronLeft, ChevronRight, X, CheckCircle, Pencil, Trash2 } from "lucide-react"
 import { cn, stripInvisible } from "@/lib/utils"
 import { useLocale } from "@/lib/context"
 import { toast } from "sonner"
@@ -52,6 +52,7 @@ export default function AdminOrdersPage() {
 
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [markPaidConfirm, setMarkPaidConfirm] = useState<string | null>(null)
+  const [clearingExpired, setClearingExpired] = useState(false)
   const [editingCardKey, setEditingCardKey] = useState<OrderCardKey | null>(null)
   const [editingCardKeyContent, setEditingCardKeyContent] = useState("")
   const [resendDeliveryEmail, setResendDeliveryEmail] = useState(false)
@@ -136,6 +137,26 @@ export default function AdminOrdersPage() {
     }
   }
 
+  const handleClearExpiredOrders = async () => {
+    if (clearingExpired) return
+    if (!window.confirm(t("admin.clearExpiredConfirm"))) return
+    setClearingExpired(true)
+    try {
+      const result = await adminOrderApi.clearExpiredOrders()
+      if (result.deleted_count > 0) {
+        toast.success(`${t("admin.clearExpiredSuccess")} (${result.deleted_count})`)
+      } else {
+        toast.message(t("admin.clearExpiredEmpty"))
+      }
+      setCurrentPage(1)
+      await fetchOrders()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t("admin.clearExpiredFailed"))
+    } finally {
+      setClearingExpired(false)
+    }
+  }
+
   const handleUpdateCardKey = async () => {
     if (!showDetail || !editingCardKey) return
     const content = editingCardKeyContent.trim()
@@ -173,14 +194,25 @@ export default function AdminOrdersPage() {
           <h1 className="text-2xl font-bold text-foreground">{t("admin.orders")}</h1>
           <p className="text-sm text-muted-foreground">{t("admin.ordersDesc")}</p>
         </div>
-        <button
-          type="button"
-          className="flex items-center gap-2 rounded-lg border border-input bg-transparent px-4 py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors"
-          onClick={() => toast.info("导出功能开发中")}
-        >
-          <Download className="h-4 w-4" />
-          导出
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-2 rounded-lg border border-input bg-transparent px-4 py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+            onClick={() => toast.info("导出功能开发中")}
+          >
+            <Download className="h-4 w-4" />
+            导出
+          </button>
+          <button
+            type="button"
+            onClick={handleClearExpiredOrders}
+            disabled={clearingExpired}
+            className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Trash2 className="h-4 w-4" />
+            {clearingExpired ? t("admin.clearingExpiredOrders") : t("admin.clearExpiredOrders")}
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

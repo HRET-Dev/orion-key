@@ -41,6 +41,12 @@ public class AdminOrderController {
         return ApiResponse.success();
     }
 
+    @LogOperation(action = "order.clear_expired", targetType = "ORDER", detail = "'清理过期订单'")
+    @DeleteMapping("/expired")
+    public ApiResponse<Map<String, Object>> clearExpiredOrders() {
+        return ApiResponse.success(adminOrderService.clearExpiredOrders());
+    }
+
     @LogOperation(action = "order.update_card_key", targetType = "ORDER", targetId = "#id", detail = "'修改订单卡密'")
     @PutMapping("/{id}/card-keys/{cardKeyId}")
     public ApiResponse<Void> updateDeliveredCardKey(@PathVariable UUID id,
