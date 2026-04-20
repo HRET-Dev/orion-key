@@ -548,6 +548,16 @@ export const adminCardKeyApi = {
     const qs = buildQuery(params)
     return request<{ invalidated_count: number }>(`/admin/card-keys/batch-invalidate?${qs}`, { method: "POST" })
   },
+  batchMigrate: (data: {
+    source_product_id: string
+    source_spec_id?: string | null
+    target_product_id: string
+    target_spec_id?: string | null
+  }) =>
+    request<{ migrated_count: number }>("/admin/card-keys/batch-migrate", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   getByOrder: (orderId: string) =>
     request<OrderCardKey[]>(`/admin/card-keys/by-order/${orderId}`),
 }

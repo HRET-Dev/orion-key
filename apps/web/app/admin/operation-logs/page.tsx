@@ -14,6 +14,7 @@ const actionLabels: Record<string, { label: string; color: string }> = {
   "product.delete": { label: "删除商品", color: "bg-red-500/10 text-red-500" },
   "cardkey.import": { label: "导入卡密", color: "bg-violet-500/10 text-violet-600" },
   "cardkey.invalidate": { label: "作废卡密", color: "bg-red-500/10 text-red-500" },
+  "cardkey.migrate": { label: "迁移卡密", color: "bg-sky-500/10 text-sky-600" },
   "order.mark_paid": { label: "手动标记", color: "bg-amber-500/10 text-amber-600" },
   "user.disable": { label: "禁用用户", color: "bg-red-500/10 text-red-500" },
   "user.enable": { label: "启用用户", color: "bg-emerald-500/10 text-emerald-600" },

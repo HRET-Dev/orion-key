@@ -63,6 +63,19 @@ public class AdminCardKeyController {
         return ApiResponse.success(Map.of("invalidated_count", count));
     }
 
+    @LogOperation(action = "cardkey.migrate", targetType = "CARD_KEY", detail = "'批量迁移'")
+    @PostMapping("/batch-migrate")
+    public ApiResponse<?> batchMigrateCardKeys(@RequestBody Map<String, Object> request) {
+        UUID sourceProductId = UUID.fromString((String) request.get("source_product_id"));
+        UUID sourceSpecId = request.get("source_spec_id") != null
+                ? UUID.fromString((String) request.get("source_spec_id")) : null;
+        UUID targetProductId = UUID.fromString((String) request.get("target_product_id"));
+        UUID targetSpecId = request.get("target_spec_id") != null
+                ? UUID.fromString((String) request.get("target_spec_id")) : null;
+        int count = adminCardKeyService.batchMigrateCardKeys(sourceProductId, sourceSpecId, targetProductId, targetSpecId);
+        return ApiResponse.success(Map.of("migrated_count", count));
+    }
+
     @GetMapping("/by-order/{orderId}")
     public ApiResponse<?> getCardKeysByOrder(@PathVariable UUID orderId) {
         return ApiResponse.success(adminCardKeyService.getCardKeysByOrder(orderId));

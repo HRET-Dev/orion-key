@@ -18,6 +18,8 @@ public interface AdminCardKeyService {
 
     int batchInvalidateCardKeys(UUID productId, UUID specId);
 
+    int batchMigrateCardKeys(UUID sourceProductId, UUID sourceSpecId, UUID targetProductId, UUID targetSpecId);
+
     List<?> getCardKeysByOrder(UUID orderId);
 
     PageResult<?> listCardKeys(UUID productId, UUID specId, int page, int pageSize);

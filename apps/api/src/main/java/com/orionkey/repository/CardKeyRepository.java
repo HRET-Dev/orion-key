@@ -67,6 +67,13 @@ public interface CardKeyRepository extends JpaRepository<CardKey, UUID> {
     List<Object[]> countByProductIdAndSpecIdGroupByStatus(@Param("productId") UUID productId,
                                                           @Param("specId") UUID specId);
 
+    @Query("SELECT ck FROM CardKey ck WHERE ck.productId = :productId " +
+            "AND ((:specId IS NULL AND ck.specId IS NULL) OR ck.specId = :specId) " +
+            "AND ck.status = :status ORDER BY ck.createdAt ASC")
+    List<CardKey> findByProductIdAndOptionalSpecIdAndStatus(@Param("productId") UUID productId,
+                                                            @Param("specId") UUID specId,
+                                                            @Param("status") CardKeyStatus status);
+
     @Modifying
     @Query("UPDATE CardKey ck SET ck.status = :newStatus " +
             "WHERE ck.productId = :productId " +
@@ -76,4 +83,15 @@ public interface CardKeyRepository extends JpaRepository<CardKey, UUID> {
                                          @Param("specId") UUID specId,
                                          @Param("oldStatus") CardKeyStatus oldStatus,
                                          @Param("newStatus") CardKeyStatus newStatus);
+
+    @Modifying
+    @Query("UPDATE CardKey ck SET ck.productId = :targetProductId, ck.specId = :targetSpecId " +
+            "WHERE ck.productId = :sourceProductId " +
+            "AND ((:sourceSpecId IS NULL AND ck.specId IS NULL) OR ck.specId = :sourceSpecId) " +
+            "AND ck.status = :status")
+    int migrateAvailableByProductIdAndSpecId(@Param("sourceProductId") UUID sourceProductId,
+                                             @Param("sourceSpecId") UUID sourceSpecId,
+                                             @Param("targetProductId") UUID targetProductId,
+                                             @Param("targetSpecId") UUID targetSpecId,
+                                             @Param("status") CardKeyStatus status);
 }

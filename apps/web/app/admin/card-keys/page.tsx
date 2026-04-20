@@ -6,6 +6,7 @@ import {
   Eye,
   Ban,
   Package,
+  ArrowRightLeft,
   KeyRound,
   AlertCircle,
   X,
@@ -24,7 +25,7 @@ import {
   mockProducts,
 } from "@/lib/mock-data"
 import { Modal } from "@/components/ui/modal"
-import type { CardKeyStockSummary, CardKeyListItem, CardImportBatch, ProductCard, ProductSpec } from "@/types"
+import type { CardKeyStockSummary, CardKeyListItem, CardImportBatch, ProductCard, ProductDetail, ProductSpec } from "@/types"
 
 export default function AdminCardKeysPage() {
   const { t } = useLocale()
@@ -225,6 +226,15 @@ export default function AdminCardKeysPage() {
   const [showInvalidateConfirm, setShowInvalidateConfirm] = useState<CardKeyStockSummary | null>(null)
   const [invalidating, setInvalidating] = useState(false)
 
+  // Batch migrate state
+  const [showMigrateModal, setShowMigrateModal] = useState<CardKeyStockSummary | null>(null)
+  const [targetProductId, setTargetProductId] = useState("")
+  const [targetSpecId, setTargetSpecId] = useState("")
+  const [targetSpecs, setTargetSpecs] = useState<ProductSpec[]>([])
+  const [targetRequiresSpec, setTargetRequiresSpec] = useState(false)
+  const [loadingTargetSpecs, setLoadingTargetSpecs] = useState(false)
+  const [migrating, setMigrating] = useState(false)
+
   // Single invalidate confirmation state
   const [singleInvalidateTarget, setSingleInvalidateTarget] = useState<CardKeyListItem | null>(null)
   const [singleInvalidating, setSingleInvalidating] = useState(false)
@@ -250,6 +260,86 @@ export default function AdminCardKeysPage() {
     }
   }
 
+  const resetMigrateForm = () => {
+    setShowMigrateModal(null)
+    setTargetProductId("")
+    setTargetSpecId("")
+    setTargetSpecs([])
+    setTargetRequiresSpec(false)
+    setLoadingTargetSpecs(false)
+  }
+
+  const handleTargetProductChange = async (productId: string) => {
+    setTargetProductId(productId)
+    setTargetSpecId("")
+    setTargetSpecs([])
+    setTargetRequiresSpec(false)
+    if (!productId) return
+    setLoadingTargetSpecs(true)
+    try {
+      const [detail, specs] = await Promise.all([
+        withMockFallback(
+          () => adminProductApi.getDetail(productId),
+          () => ({ spec_enabled: false } as ProductDetail)
+        ),
+        withMockFallback(
+          () => adminProductApi.getSpecs(productId),
+          () => []
+        ),
+      ])
+      setTargetRequiresSpec(Boolean(detail.spec_enabled && specs.length > 0))
+      setTargetSpecs(specs)
+    } catch {
+      setTargetSpecs([])
+      setTargetRequiresSpec(false)
+    } finally {
+      setLoadingTargetSpecs(false)
+    }
+  }
+
+  const handleBatchMigrate = async () => {
+    if (!showMigrateModal) return
+    if (!targetProductId) {
+      toast.error("请选择目标商品")
+      return
+    }
+
+    if (targetRequiresSpec && !targetSpecId) {
+      toast.error("目标商品已启用规格，请选择目标规格")
+      return
+    }
+
+    if (showMigrateModal.product_id === targetProductId && (showMigrateModal.spec_id ?? "") === (targetSpecId || "")) {
+      toast.error("目标商品与源商品不能相同")
+      return
+    }
+
+    setMigrating(true)
+    try {
+      const result = await withMockFallback(
+        () => adminCardKeyApi.batchMigrate({
+          source_product_id: showMigrateModal.product_id,
+          source_spec_id: showMigrateModal.spec_id,
+          target_product_id: targetProductId,
+          target_spec_id: targetSpecId || null,
+        }),
+        () => ({ migrated_count: showMigrateModal.available })
+      )
+      toast.success(`已迁移 ${result.migrated_count} 条可用卡密`)
+      const currentDetailItem = detailItem
+      const currentDetailPage = detailPage
+      resetMigrateForm()
+      await fetchStock()
+      if (currentDetailItem) {
+        await fetchDetailKeys(currentDetailItem, currentDetailPage)
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "迁移失败")
+    } finally {
+      setMigrating(false)
+    }
+  }
+
   const handleSingleInvalidate = async () => {
     if (!singleInvalidateTarget) return
     setSingleInvalidating(true)
@@ -267,6 +357,14 @@ export default function AdminCardKeysPage() {
     } finally {
       setSingleInvalidating(false)
     }
+  }
+
+  const openMigrateModal = (item: CardKeyStockSummary) => {
+    setTargetProductId("")
+    setTargetSpecId("")
+    setTargetSpecs([])
+    setTargetRequiresSpec(false)
+    setShowMigrateModal(item)
   }
 
   if (loading) {
@@ -405,6 +503,16 @@ export default function AdminCardKeysPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
+                          {item.available > 0 && (
+                            <button
+                              type="button"
+                              className="rounded-md p-1.5 text-muted-foreground hover:bg-sky-500/10 hover:text-sky-600 transition-colors"
+                              title="迁移可用卡密"
+                              onClick={() => openMigrateModal(item)}
+                            >
+                              <ArrowRightLeft className="h-4 w-4" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
@@ -699,6 +807,95 @@ export default function AdminCardKeysPage() {
               disabled={singleInvalidating}
             >
               {singleInvalidating ? "作废中..." : "确认作废"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Batch Migrate Modal */}
+      <Modal open={showMigrateModal !== null} onClose={resetMigrateForm} className="max-w-lg">
+        <div className="flex flex-col gap-4 p-6">
+          <div className="flex items-start gap-3">
+            <div className="rounded-full bg-sky-500/10 p-2">
+              <ArrowRightLeft className="h-5 w-5 text-sky-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-base font-semibold text-foreground">迁移可用卡密</h3>
+              {showMigrateModal && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  将「{showMigrateModal.product_title}
+                  {showMigrateModal.spec_name ? ` — ${showMigrateModal.spec_name}` : ""}」
+                  下的 <span className="font-medium text-foreground">{showMigrateModal.available}</span> 条可用卡密迁移到其他商品。
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-foreground">目标商品</label>
+            <select
+              className="h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              value={targetProductId}
+              onChange={(e) => handleTargetProductChange(e.target.value)}
+              disabled={migrating}
+            >
+              <option value="">请选择目标商品</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {targetProductId && (loadingTargetSpecs ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              加载目标规格...
+            </div>
+          ) : targetRequiresSpec ? (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-foreground">目标规格</label>
+              <select
+                className="h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                value={targetSpecId}
+                onChange={(e) => setTargetSpecId(e.target.value)}
+                disabled={migrating}
+              >
+                <option value="">请选择目标规格</option>
+                {targetSpecs.map((spec) => (
+                  <option key={spec.id} value={spec.id}>
+                    {spec.name} - {spec.stock_available} 件库存
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              目标商品将使用默认库存池接收迁移的卡密。
+            </p>
+          ))}
+
+          <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            仅会迁移可用状态的卡密。已售、锁定、已作废卡密不会被移动。
+          </p>
+
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              className="rounded-lg border border-input bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+              onClick={resetMigrateForm}
+              disabled={migrating}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 transition-colors disabled:opacity-50"
+              onClick={handleBatchMigrate}
+              disabled={migrating}
+            >
+              {migrating ? "迁移中..." : "确认迁移"}
             </button>
           </div>
         </div>

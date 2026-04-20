@@ -182,6 +182,40 @@ public class AdminCardKeyServiceImpl implements AdminCardKeyService {
     }
 
     @Override
+    @Transactional
+    public int batchMigrateCardKeys(UUID sourceProductId, UUID sourceSpecId, UUID targetProductId, UUID targetSpecId) {
+        validateProductAndSpec(sourceProductId, sourceSpecId, false);
+        Product targetProduct = validateProductAndSpec(targetProductId, targetSpecId, true);
+
+        if (Objects.equals(sourceProductId, targetProductId) && Objects.equals(sourceSpecId, targetSpecId)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "源商品和目标商品不能相同");
+        }
+
+        List<CardKey> sourceAvailableKeys = cardKeyRepository.findByProductIdAndOptionalSpecIdAndStatus(
+                sourceProductId, sourceSpecId, CardKeyStatus.AVAILABLE);
+        if (sourceAvailableKeys.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前库存池没有可迁移的卡密");
+        }
+
+        if (targetProduct.isSpecEnabled() && targetSpecId == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标商品已启用规格，必须选择目标规格");
+        }
+        if (!targetProduct.isSpecEnabled() && targetSpecId != null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标商品未启用规格，不能选择目标规格");
+        }
+
+        for (CardKey key : sourceAvailableKeys) {
+            if (cardKeyRepository.existsByContentAndProductIdAndSpecId(key.getContent(), targetProductId, targetSpecId)) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "目标商品中已存在重复卡密: " + abbreviateContent(key.getContent()));
+            }
+        }
+
+        return cardKeyRepository.migrateAvailableByProductIdAndSpecId(
+                sourceProductId, sourceSpecId, targetProductId, targetSpecId, CardKeyStatus.AVAILABLE);
+    }
+
+    @Override
     public List<?> getCardKeysByOrder(UUID orderId) {
         List<CardKey> keys = cardKeyRepository.findByOrderId(orderId);
         List<OrderItem> items = orderItemRepository.findByOrderId(orderId);
@@ -244,5 +278,35 @@ public class AdminCardKeyServiceImpl implements AdminCardKeyService {
         map.put("locked", locked);
         map.put("invalid", invalid);
         return map;
+    }
+
+    private Product validateProductAndSpec(UUID productId, UUID specId, boolean validateSpecRule) {
+        Product product = productRepository.findById(productId)
+                .filter(p -> p.getIsDeleted() == 0)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND, "商品不存在"));
+
+        if (specId != null) {
+            productSpecRepository.findById(specId)
+                    .filter(s -> s.getProductId().equals(productId) && s.getIsDeleted() == 0)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.SPEC_NOT_FOUND, "规格不存在或不属于该商品"));
+        }
+
+        if (validateSpecRule) {
+            if (product.isSpecEnabled() && specId == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "目标商品已启用规格，必须选择目标规格");
+            }
+            if (!product.isSpecEnabled() && specId != null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "目标商品未启用规格，不能选择目标规格");
+            }
+        }
+
+        return product;
+    }
+
+    private String abbreviateContent(String content) {
+        if (content == null || content.length() <= 24) {
+            return content;
+        }
+        return content.substring(0, 24) + "...";
     }
 }
