@@ -8,6 +8,7 @@ import com.orionkey.entity.*;
 import com.orionkey.exception.BusinessException;
 import com.orionkey.repository.*;
 import com.orionkey.service.CouponService;
+import com.orionkey.service.DeliverService;
 import com.orionkey.service.OrderService;
 import com.orionkey.service.PaymentService;
 import lombok.RequiredArgsConstructor;
@@ -33,10 +34,12 @@ public class OrderServiceImpl implements OrderService {
     private final WholesaleRuleRepository wholesaleRuleRepository;
     private final CartItemRepository cartItemRepository;
     private final CardKeyRepository cardKeyRepository;
+    private final UserRepository userRepository;
     private final SiteConfigRepository siteConfigRepository;
     private final PaymentChannelRepository paymentChannelRepository;
     private final PaymentService paymentService;
     private final CouponService couponService;
+    private final DeliverService deliverService;
 
     @Override
     @Transactional
@@ -62,7 +65,7 @@ public class OrderServiceImpl implements OrderService {
         UUID productId = UUID.fromString((String) req.get("product_id"));
         UUID specId = req.get("spec_id") != null ? UUID.fromString((String) req.get("spec_id")) : null;
         int quantity = ((Number) req.get("quantity")).intValue();
-        String email = (String) req.get("email");
+        String email = resolveOrderEmail((String) req.get("email"), userId);
         String couponCode = (String) req.get("coupon_code");
 
         // F4: 购买数量校验（读取后台配置，兜底 999）
@@ -102,8 +105,8 @@ public class OrderServiceImpl implements OrderService {
                 List.of(new CouponService.CouponLineItem(productId, totalAmount)));
         BigDecimal couponDiscount = appliedCoupon != null ? appliedCoupon.discountAmount() : BigDecimal.ZERO;
         BigDecimal actualAmount = totalAmount.subtract(couponDiscount);
-        if (actualAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(ErrorCode.COUPON_INVALID, "优惠后订单金额必须大于 0");
+        if (actualAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID, "优惠后订单金额不能小于 0");
         }
         int expireMinutes = getConfigInt("order_expire_minutes", 15);
 
@@ -144,6 +147,7 @@ public class OrderServiceImpl implements OrderService {
         item.setSubtotal(totalAmount);
         orderItemRepository.save(item);
 
+        order = finalizeZeroAmountOrderIfNeeded(order);
         return buildOrderResult(order, device);
     }
 
@@ -167,7 +171,7 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        String email = (String) req.get("email");
+        String email = resolveOrderEmail((String) req.get("email"), userId);
         String couponCode = (String) req.get("coupon_code");
         checkPendingOrderLimits(userId, clientIp, email);
         String paymentMethod = (String) req.get("payment_method");
@@ -265,8 +269,8 @@ public class OrderServiceImpl implements OrderService {
         CouponService.AppliedCoupon appliedCoupon = couponService.prepareCoupon(couponCode, couponLineItems);
         BigDecimal couponDiscount = appliedCoupon != null ? appliedCoupon.discountAmount() : BigDecimal.ZERO;
         BigDecimal actualAmount = totalAmount.subtract(couponDiscount);
-        if (actualAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(ErrorCode.COUPON_INVALID, "优惠后订单金额必须大于 0");
+        if (actualAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID, "优惠后订单金额不能小于 0");
         }
 
         order.setTotalAmount(totalAmount);
@@ -284,6 +288,7 @@ public class OrderServiceImpl implements OrderService {
             cartItemRepository.delete(ci);
         }
 
+        order = finalizeZeroAmountOrderIfNeeded(order);
         return buildOrderResult(order, device);
     }
 
@@ -393,8 +398,9 @@ public class OrderServiceImpl implements OrderService {
     private Map<String, Object> buildOrderResult(Order order, String device) {
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         Map<String, Object> orderDetail = toOrderDetail(order, items);
-        Map<String, Object> payment = paymentService.createPayment(
-                order.getId(), order.getPaymentMethod(), order.getActualAmount(), device);
+        Map<String, Object> payment = order.getActualAmount().compareTo(BigDecimal.ZERO) == 0
+                ? buildFreePaymentResult(order)
+                : paymentService.createPayment(order.getId(), order.getPaymentMethod(), order.getActualAmount(), device);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order", orderDetail);
@@ -469,6 +475,45 @@ public class OrderServiceImpl implements OrderService {
     private int getMaxPurchasePerUser() {
         int val = getConfigInt("max_purchase_per_user", 999);
         return (val > 0 && val <= 999) ? val : 999;
+    }
+
+    private String resolveOrderEmail(String requestEmail, UUID userId) {
+        if (requestEmail != null && !requestEmail.isBlank()) {
+            return requestEmail.trim();
+        }
+        if (userId != null) {
+            return userRepository.findById(userId)
+                    .map(User::getEmail)
+                    .filter(email -> email != null && !email.isBlank())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "当前账号未绑定邮箱，请先补充邮箱后再下单"));
+        }
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "邮箱不能为空");
+    }
+
+    private Order finalizeZeroAmountOrderIfNeeded(Order order) {
+        if (order.getActualAmount() == null || order.getActualAmount().compareTo(BigDecimal.ZERO) != 0) {
+            return order;
+        }
+
+        order.setStatus(OrderStatus.PAID);
+        order.setPaidAt(LocalDateTime.now());
+        order.setPaymentUrl(null);
+        order.setQrcodeUrl(null);
+        order.setEpayTradeNo(null);
+        orderRepository.save(order);
+
+        deliverService.deliverOrders(Map.of("order_ids", List.of(order.getId().toString())));
+        return orderRepository.findById(order.getId()).orElse(order);
+    }
+
+    private Map<String, Object> buildFreePaymentResult(Order order) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order_id", order.getId());
+        result.put("payment_url", "");
+        result.put("qrcode_url", "");
+        result.put("pay_url", "");
+        result.put("expires_at", order.getExpiresAt());
+        return result;
     }
 
     private int getConfigInt(String key, int defaultValue) {

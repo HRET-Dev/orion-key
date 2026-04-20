@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { ShoppingBag, Mail, CreditCard, Lock } from "lucide-react"
 import { toast } from "sonner"
-import { useLocale, useCart } from "@/lib/context"
+import { useLocale, useCart, useAuth } from "@/lib/context"
 import { couponApi, orderApi, paymentApi, withMockFallback, getApiErrorMessage } from "@/services/api"
 import { mockPaymentChannels, mockCreateOrder } from "@/lib/mock-data"
 import {
@@ -25,6 +25,7 @@ export default function CheckoutPage() {
   const { t } = useLocale()
   const router = useRouter()
   const { items, totalAmount, itemCount, refreshCart } = useCart()
+  const { user, isLoggedIn } = useAuth()
 
   const [email, setEmail] = useState("")
   const [channels, setChannels] = useState<PaymentChannelItem[]>([])
@@ -65,6 +66,12 @@ export default function CheckoutPage() {
     setAppliedCoupon(null)
   }, [itemCount, totalAmount])
 
+  useEffect(() => {
+    if (!email.trim() && user?.email) {
+      setEmail(user.email)
+    }
+  }, [user, email])
+
   const handleApplyCoupon = async () => {
     const code = couponCode.trim()
     if (!code) {
@@ -102,12 +109,14 @@ export default function CheckoutPage() {
   }
 
   const handleConfirmOrder = async () => {
-    if (!email.trim()) {
+    const orderEmail = email.trim() || user?.email?.trim() || ""
+
+    if (!orderEmail) {
       toast.error(t("product.emailRequired"))
       emailInputRef.current?.focus()
       return
     }
-    if (!validateEmail(email)) {
+    if (!validateEmail(orderEmail)) {
       toast.error(t("product.emailInvalid"))
       emailInputRef.current?.focus()
       return
@@ -123,15 +132,20 @@ export default function CheckoutPage() {
       const device = detectPaymentDevice()
       const result = await withMockFallback(
         () => orderApi.createFromCart({
-          email,
+          email: orderEmail,
           payment_method: selectedPayment,
           coupon_code: appliedCoupon?.code,
           idempotency_key: generateIdempotencyKey(),
           device,
         }),
-        () => mockCreateOrder(email, selectedPayment)
+        () => mockCreateOrder(orderEmail, selectedPayment)
       )
       await refreshCart()
+      if (result.order.status === "PAID" || result.order.status === "DELIVERED") {
+        toast.success("订单已完成")
+        router.push(`/order/query?orderId=${result.order.id}`)
+        return
+      }
       toast.success(t("checkout.processingOrder"))
       if (result.payment.hosted_page_action && result.payment.hosted_page_fields) {
         postToPaymentPage(result.payment.hosted_page_action, result.payment.hosted_page_fields)
@@ -232,11 +246,11 @@ export default function CheckoutPage() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder={t("product.emailPlaceholder")}
+            placeholder={isLoggedIn && user?.email ? user.email : t("product.emailPlaceholder")}
             className="mb-2 w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
           <p className="text-xs text-muted-foreground">
-            {t("product.emailFullHint")}
+            {isLoggedIn && user?.email ? `已自动带入账号邮箱：${user.email}` : t("product.emailFullHint")}
           </p>
         </div>
 
