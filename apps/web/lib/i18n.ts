@@ -300,6 +300,7 @@ const zh = {
   // Admin
   "admin.dashboard": "仪表盘",
   "admin.products": "商品管理",
+  "admin.coupons": "优惠券管理",
   "admin.categories": "分类管理",
   "admin.cardKeys": "卡密管理",
   "admin.orders": "订单管理",
@@ -407,6 +408,7 @@ const zh = {
 
   // Admin Card Keys
   "admin.cardKeysDesc": "管理卡密库存与导入记录",
+  "admin.couponsDesc": "管理优惠券规则、状态与订单关联",
   "admin.stockOverview": "库存总览",
   "admin.importRecords": "导入记录",
   "admin.totalKeys": "总卡密数",
@@ -932,6 +934,7 @@ const en: Record<keyof typeof zh, string> = {
   // Admin
   "admin.dashboard": "Dashboard",
   "admin.products": "Products",
+  "admin.coupons": "Coupons",
   "admin.categories": "Categories",
   "admin.cardKeys": "Card Keys",
   "admin.orders": "Orders",
@@ -1039,6 +1042,7 @@ const en: Record<keyof typeof zh, string> = {
 
   // Admin Card Keys
   "admin.cardKeysDesc": "Manage card key stock and import records",
+  "admin.couponsDesc": "Manage coupon rules, status, and linked orders",
   "admin.stockOverview": "Stock Overview",
   "admin.importRecords": "Import Records",
   "admin.totalKeys": "Total Keys",

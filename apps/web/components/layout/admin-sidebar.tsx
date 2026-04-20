@@ -21,6 +21,7 @@ import {
   Moon,
   Globe,
   Palette,
+  TicketPercent,
 } from "lucide-react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
@@ -31,6 +32,7 @@ const navItems: { labelKey: TranslationKey; href: string; icon: typeof LayoutDas
   { labelKey: "admin.dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
   { labelKey: "admin.categories", href: "/admin/categories", icon: FolderTree },
   { labelKey: "admin.products", href: "/admin/products", icon: Package },
+  { labelKey: "admin.coupons", href: "/admin/coupons", icon: TicketPercent },
   { labelKey: "admin.cardKeys", href: "/admin/card-keys", icon: KeyRound },
   { labelKey: "admin.orders", href: "/admin/orders", icon: ShoppingCart },
   { labelKey: "admin.users", href: "/admin/users", icon: Users },

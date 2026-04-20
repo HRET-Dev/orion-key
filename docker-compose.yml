@@ -56,7 +56,7 @@ services:
     image: ${WEB_IMAGE:-ghcr.io/OWNER/orion-key-web:latest}
 
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
 
     # 环境变量
     # TZ: 容器时区统一北京时间

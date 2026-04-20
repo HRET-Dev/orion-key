@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Zap, Minus, Plus, ShoppingCart, Package, TrendingUp } from "lucide-react"
 import { toast } from "sonner"
 import { useLocale, useAuth, useCart } from "@/lib/context"
-import { orderApi, withMockFallback, getApiErrorMessage, setTurnstileHeaders } from "@/services/api"
+import { couponApi, orderApi, withMockFallback, getApiErrorMessage, setTurnstileHeaders } from "@/services/api"
 import { mockCreateOrder } from "@/lib/mock-data"
 import { Turnstile, useTurnstile } from "@/components/shared/turnstile"
 import {
@@ -19,7 +19,7 @@ import {
   postToPaymentPage,
 } from "@/lib/utils"
 import { PaymentSelector } from "@/components/shared/payment-selector"
-import type { ProductDetail, ProductSpec, PaymentChannelItem } from "@/types"
+import type { CouponPreviewResult, ProductDetail, ProductSpec, PaymentChannelItem } from "@/types"
 
 interface ProductActionsProps {
   product: ProductDetail
@@ -44,14 +44,22 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
   const [selectedPayment, setSelectedPayment] = useState(
     enabledChannels.length > 0 ? enabledChannels[0].channel_code : ""
   )
+  const [couponCode, setCouponCode] = useState("")
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponPreviewResult | null>(null)
+  const [applyingCoupon, setApplyingCoupon] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const { turnstileToken, setTurnstileToken, handleTurnstileReset } = useTurnstile()
 
   const currentPrice = selectedSpec ? selectedSpec.price : product.base_price
   const totalPrice = currentPrice * quantity
+  const payablePrice = appliedCoupon ? appliedCoupon.actual_amount : totalPrice
   const currentStock = selectedSpec?.stock_available ?? product.stock_available ?? 0
   const isOutOfStock = currentStock === 0
   const deliveryType = product.delivery_type === "MANUAL" ? "manual" : "auto"
+
+  useEffect(() => {
+    setAppliedCoupon(null)
+  }, [product.id, selectedSpec?.id, quantity])
 
   const handleEmailChange = (value: string) => {
     setEmail(value)
@@ -95,6 +103,7 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
           quantity,
           email,
           payment_method: selectedPayment,
+          coupon_code: appliedCoupon?.code,
           idempotency_key: generateIdempotencyKey(),
           device,
         }),
@@ -158,6 +167,40 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, t))
     }
+  }
+
+  const handleApplyCoupon = async () => {
+    const code = couponCode.trim()
+    if (!code) {
+      toast.error("请输入优惠券码")
+      return
+    }
+    setApplyingCoupon(true)
+    try {
+      const result = await couponApi.preview({
+        code,
+        items: [
+          {
+            product_id: product.id,
+            spec_id: selectedSpec?.id ?? null,
+            quantity,
+          },
+        ],
+      })
+      setAppliedCoupon(result)
+      setCouponCode(result.code)
+      toast.success(`优惠券已生效，已减免 ¥${result.discount_amount.toFixed(2)}`)
+    } catch (err: unknown) {
+      setAppliedCoupon(null)
+      toast.error(getApiErrorMessage(err, t))
+    } finally {
+      setApplyingCoupon(false)
+    }
+  }
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null)
+    setCouponCode("")
   }
 
   return (
@@ -319,6 +362,51 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
           </div>
         </div>
 
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-foreground">
+            优惠券
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={couponCode}
+              onChange={(e) => {
+                setCouponCode(e.target.value.toUpperCase())
+                if (appliedCoupon) setAppliedCoupon(null)
+              }}
+              placeholder="输入优惠券码"
+              className="h-10 flex-1 rounded-lg border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            {appliedCoupon ? (
+              <button
+                type="button"
+                onClick={handleRemoveCoupon}
+                className="rounded-lg border border-input px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                移除
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleApplyCoupon}
+                disabled={applyingCoupon}
+                className="rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                {applyingCoupon ? "校验中..." : "应用"}
+              </button>
+            )}
+          </div>
+          {appliedCoupon && (
+            <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              <p className="font-medium">{appliedCoupon.name}</p>
+              {appliedCoupon.min_order_amount > 0 && (
+                <p>门槛 ¥{appliedCoupon.min_order_amount.toFixed(2)}，已命中 ¥{appliedCoupon.eligible_amount.toFixed(2)}</p>
+              )}
+              <p>已优惠 ¥{appliedCoupon.discount_amount.toFixed(2)}，待支付 ¥{appliedCoupon.actual_amount.toFixed(2)}</p>
+            </div>
+          )}
+        </div>
+
         {/* Payment method */}
         <div>
           <label className="mb-2 block text-sm font-medium text-foreground">
@@ -334,11 +422,18 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
         {/* Total */}
         <div className="flex items-baseline justify-between border-t border-border pt-4">
           <span className="text-sm text-muted-foreground">{t("product.totalPrice")}</span>
-          <div className="flex items-baseline gap-0.5">
-            <span className="text-lg font-bold text-primary">{getCurrencySymbol(product.currency)}</span>
-            <span className="text-2xl font-bold text-primary">
-              {totalPrice.toFixed(2)}
-            </span>
+          <div className="flex flex-col items-end gap-1">
+            {appliedCoupon && (
+              <span className="text-sm text-emerald-600">
+                优惠券折扣 -{getCurrencySymbol(product.currency)}{appliedCoupon.discount_amount.toFixed(2)}
+              </span>
+            )}
+            <div className="flex items-baseline gap-0.5">
+              <span className="text-lg font-bold text-primary">{getCurrencySymbol(product.currency)}</span>
+              <span className="text-2xl font-bold text-primary">
+                {payablePrice.toFixed(2)}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -356,7 +451,7 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
             ) : (
               <Zap className="h-4 w-4" />
             )}
-            {isOutOfStock ? t("product.outOfStock") : t("product.buyNow")}
+            {isOutOfStock ? t("product.outOfStock") : `${t("product.buyNow")} ${getCurrencySymbol(product.currency)}${payablePrice.toFixed(2)}`}
           </button>
           <button
             onClick={handleAddToCart}

@@ -14,6 +14,7 @@ import com.orionkey.repository.OrderItemRepository;
 import com.orionkey.repository.OrderRepository;
 import com.orionkey.repository.UserRepository;
 import com.orionkey.service.AdminOrderService;
+import com.orionkey.service.CouponService;
 import com.orionkey.service.EmailService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -35,6 +36,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     private final CardKeyRepository cardKeyRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final CouponService couponService;
 
     @Override
     public PageResult<?> listOrders(String status, String orderType, String paymentMethod,
@@ -125,6 +127,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         if (orderIds.isEmpty()) {
             return Map.of("deleted_count", 0);
         }
+        couponService.releaseCouponsForOrders(orderRepository.findByIdIn(orderIds));
         orderItemRepository.deleteByOrderIdIn(orderIds);
         int deletedCount = orderRepository.deleteByIdInBatch(orderIds);
         return Map.of("deleted_count", deletedCount);
@@ -142,6 +145,9 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         map.put("email", o.getEmail());
         map.put("points_deducted", o.getPointsDeducted());
         map.put("points_discount", o.getPointsDiscount());
+        map.put("coupon_id", o.getCouponId());
+        map.put("coupon_code", o.getCouponCode());
+        map.put("coupon_discount", o.getCouponDiscount());
         map.put("expires_at", o.getExpiresAt());
         map.put("paid_at", o.getPaidAt());
         map.put("delivered_at", o.getDeliveredAt());

@@ -34,6 +34,8 @@ import type {
   AuthResult,
   CurrencyItem,
   TxidVerifyResult,
+  CouponPreviewResult,
+  CouponItem,
 } from "@/types"
 
 // ============================================================
@@ -379,6 +381,11 @@ export const orderApi = {
     }),
 }
 
+export const couponApi = {
+  preview: (data: { code: string; items: { product_id: string; spec_id?: string | null; quantity: number }[] }) =>
+    request<CouponPreviewResult>("/coupons/preview", { method: "POST", body: JSON.stringify(data) }),
+}
+
 // ============================================================
 // Site Config (public)
 // ============================================================
@@ -464,6 +471,41 @@ export const adminProductApi = {
     formData.append("file", file)
     return uploadRequest<{ url: string }>("/upload/image", formData)
   },
+}
+
+// ============================================================
+// Admin Coupon
+// ============================================================
+
+export const adminCouponApi = {
+  getList: (params: { page?: number; page_size?: number; keyword?: string; status?: string }) => {
+    const qs = buildQuery(params)
+    return request<PaginatedData<CouponItem>>(`/admin/coupons?${qs}`)
+  },
+  getDetail: (id: string) =>
+    request<CouponItem>(`/admin/coupons/${id}`),
+  create: (data: {
+    code: string
+    name: string
+    type: "FIXED_AMOUNT" | "PERCENTAGE"
+    discount_value: number
+    min_order_amount: number
+    applies_to_all_products: boolean
+    product_ids: string[]
+  }) =>
+    request<CouponItem>("/admin/coupons", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: {
+    code: string
+    name: string
+    type: "FIXED_AMOUNT" | "PERCENTAGE"
+    discount_value: number
+    min_order_amount: number
+    applies_to_all_products: boolean
+    product_ids: string[]
+  }) =>
+    request<null>(`/admin/coupons/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<null>(`/admin/coupons/${id}`, { method: "DELETE" }),
 }
 
 // ============================================================

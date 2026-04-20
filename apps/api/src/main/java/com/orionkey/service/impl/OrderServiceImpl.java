@@ -7,6 +7,7 @@ import com.orionkey.constant.OrderType;
 import com.orionkey.entity.*;
 import com.orionkey.exception.BusinessException;
 import com.orionkey.repository.*;
+import com.orionkey.service.CouponService;
 import com.orionkey.service.OrderService;
 import com.orionkey.service.PaymentService;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,7 @@ public class OrderServiceImpl implements OrderService {
     private final SiteConfigRepository siteConfigRepository;
     private final PaymentChannelRepository paymentChannelRepository;
     private final PaymentService paymentService;
+    private final CouponService couponService;
 
     @Override
     @Transactional
@@ -61,6 +63,7 @@ public class OrderServiceImpl implements OrderService {
         UUID specId = req.get("spec_id") != null ? UUID.fromString((String) req.get("spec_id")) : null;
         int quantity = ((Number) req.get("quantity")).intValue();
         String email = (String) req.get("email");
+        String couponCode = (String) req.get("coupon_code");
 
         // F4: 购买数量校验（读取后台配置，兜底 999）
         int maxQuantity = getMaxPurchasePerUser();
@@ -95,21 +98,34 @@ public class OrderServiceImpl implements OrderService {
         if (totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "订单金额异常，请联系客服");
         }
+        CouponService.AppliedCoupon appliedCoupon = couponService.prepareCoupon(couponCode,
+                List.of(new CouponService.CouponLineItem(productId, totalAmount)));
+        BigDecimal couponDiscount = appliedCoupon != null ? appliedCoupon.discountAmount() : BigDecimal.ZERO;
+        BigDecimal actualAmount = totalAmount.subtract(couponDiscount);
+        if (actualAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID, "优惠后订单金额必须大于 0");
+        }
         int expireMinutes = getConfigInt("order_expire_minutes", 15);
 
         Order order = new Order();
         order.setUserId(userId);
         order.setEmail(email);
         order.setTotalAmount(totalAmount);
-        order.setActualAmount(totalAmount);
+        order.setActualAmount(actualAmount);
         order.setStatus(OrderStatus.PENDING);
         order.setOrderType(OrderType.DIRECT);
         order.setPaymentMethod(paymentMethod);
+        order.setCouponId(appliedCoupon != null ? appliedCoupon.coupon().getId() : null);
+        order.setCouponCode(appliedCoupon != null ? appliedCoupon.coupon().getCode() : null);
+        order.setCouponDiscount(couponDiscount);
         order.setExpiresAt(LocalDateTime.now().plusMinutes(expireMinutes));
         order.setIdempotencyKey(idempotencyKey);
         order.setClientIp(clientIp);
         order.setSessionToken(sessionToken);
         orderRepository.save(order);
+        if (appliedCoupon != null) {
+            couponService.occupyCoupon(appliedCoupon.coupon(), order);
+        }
 
         String specName = null;
         if (specId != null) {
@@ -152,6 +168,7 @@ public class OrderServiceImpl implements OrderService {
         }
 
         String email = (String) req.get("email");
+        String couponCode = (String) req.get("coupon_code");
         checkPendingOrderLimits(userId, clientIp, email);
         String paymentMethod = (String) req.get("payment_method");
         validatePaymentMethod(paymentMethod);
@@ -180,6 +197,7 @@ public class OrderServiceImpl implements OrderService {
 
         int expireMinutes = getConfigInt("order_expire_minutes", 15);
         BigDecimal totalAmount = BigDecimal.ZERO;
+        List<CouponService.CouponLineItem> couponLineItems = new ArrayList<>();
 
         Order order = new Order();
         order.setUserId(userId);
@@ -219,6 +237,7 @@ public class OrderServiceImpl implements OrderService {
             BigDecimal unitPrice = getUnitPrice(product, ci.getSpecId(), ci.getQuantity());
             BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(ci.getQuantity()));
             totalAmount = totalAmount.add(subtotal);
+            couponLineItems.add(new CouponService.CouponLineItem(ci.getProductId(), subtotal));
 
             String specName = null;
             if (ci.getSpecId() != null) {
@@ -243,9 +262,22 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "订单金额异常，请联系客服");
         }
 
+        CouponService.AppliedCoupon appliedCoupon = couponService.prepareCoupon(couponCode, couponLineItems);
+        BigDecimal couponDiscount = appliedCoupon != null ? appliedCoupon.discountAmount() : BigDecimal.ZERO;
+        BigDecimal actualAmount = totalAmount.subtract(couponDiscount);
+        if (actualAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID, "优惠后订单金额必须大于 0");
+        }
+
         order.setTotalAmount(totalAmount);
-        order.setActualAmount(totalAmount);
+        order.setActualAmount(actualAmount);
+        order.setCouponId(appliedCoupon != null ? appliedCoupon.coupon().getId() : null);
+        order.setCouponCode(appliedCoupon != null ? appliedCoupon.coupon().getCode() : null);
+        order.setCouponDiscount(couponDiscount);
         orderRepository.save(order);
+        if (appliedCoupon != null) {
+            couponService.occupyCoupon(appliedCoupon.coupon(), order);
+        }
 
         // Clear cart after order creation to prevent duplicate orders from same cart items
         for (CartItem ci : cartItems) {
@@ -264,6 +296,7 @@ public class OrderServiceImpl implements OrderService {
         if (order.getStatus() == OrderStatus.PENDING && order.getExpiresAt().isBefore(LocalDateTime.now())) {
             order.setStatus(OrderStatus.EXPIRED);
             orderRepository.save(order);
+            couponService.releaseCouponForOrder(order);
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order_id", order.getId());
@@ -300,6 +333,7 @@ public class OrderServiceImpl implements OrderService {
         for (Order order : expired) {
             order.setStatus(OrderStatus.EXPIRED);
             orderRepository.save(order);
+            couponService.releaseCouponForOrder(order);
             log.info("Order expired: {}", order.getId());
         }
     }
@@ -380,6 +414,9 @@ public class OrderServiceImpl implements OrderService {
         map.put("email", o.getEmail());
         map.put("points_deducted", o.getPointsDeducted());
         map.put("points_discount", o.getPointsDiscount());
+        map.put("coupon_id", o.getCouponId());
+        map.put("coupon_code", o.getCouponCode());
+        map.put("coupon_discount", o.getCouponDiscount());
         map.put("expires_at", o.getExpiresAt());
         map.put("paid_at", o.getPaidAt());
         map.put("delivered_at", o.getDeliveredAt());

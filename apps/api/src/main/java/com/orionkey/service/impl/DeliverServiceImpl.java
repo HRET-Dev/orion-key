@@ -8,6 +8,7 @@ import com.orionkey.exception.BusinessException;
 import com.orionkey.repository.*;
 import com.orionkey.service.DeliverService;
 import com.orionkey.service.EmailService;
+import com.orionkey.service.CouponService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ public class DeliverServiceImpl implements DeliverService {
     private final SiteConfigRepository siteConfigRepository;
     private final UnmatchedTransactionRepository unmatchedTransactionRepository;
     private final EmailService emailService;
+    private final CouponService couponService;
 
     @Override
     @SuppressWarnings("unchecked")
@@ -62,6 +64,7 @@ public class DeliverServiceImpl implements DeliverService {
             if (o.getStatus() == OrderStatus.PENDING && o.getExpiresAt().isBefore(now)) {
                 o.setStatus(OrderStatus.EXPIRED);
                 orderRepository.save(o);
+                couponService.releaseCouponForOrder(o);
             }
         }
 
@@ -77,6 +80,8 @@ public class DeliverServiceImpl implements DeliverService {
             map.put("order_type", o.getOrderType().name());
             map.put("payment_method", o.getPaymentMethod());
             map.put("created_at", o.getCreatedAt());
+            map.put("coupon_code", o.getCouponCode());
+            map.put("coupon_discount", o.getCouponDiscount());
             // USDT 订单：附带 TXID 审核状态（供用户查询页展示审核结果反馈）
             if (o.getPaymentMethod() != null && o.getPaymentMethod().startsWith("usdt_")) {
                 map.put("usdt_tx_id", o.getUsdtTxId());
@@ -133,6 +138,7 @@ public class DeliverServiceImpl implements DeliverService {
                                 orderId, item.getQuantity());
                         order.setStatus(OrderStatus.EXPIRED);
                         orderRepository.save(order);
+                        couponService.releaseCouponForOrder(order);
                         result.put("status", "EXPIRED");
                         result.put("groups", List.of());
                         return result;

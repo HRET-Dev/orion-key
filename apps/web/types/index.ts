@@ -151,6 +151,8 @@ export interface OrderBrief {
   order_type: OrderType
   payment_method: string
   created_at: string
+  coupon_code?: string | null
+  coupon_discount?: number
   // USDT 支付字段（仅 USDT 订单返回）
   usdt_tx_id?: string
   // TXID 审核状态（仅 USDT 订单且有审核记录时返回）
@@ -172,6 +174,7 @@ export interface OrderDetail extends OrderBrief {
   email: string
   points_deducted: number
   points_discount: number
+  coupon_id?: string | null
   expires_at: string
   paid_at: string | null
   delivered_at: string | null
@@ -307,6 +310,7 @@ export interface CreateOrderRequest {
   quantity: number
   email: string
   payment_method: string
+  coupon_code?: string
   use_points?: boolean
   idempotency_key: string
   device?: string
@@ -315,9 +319,50 @@ export interface CreateOrderRequest {
 export interface CreateCartOrderRequest {
   email: string
   payment_method: string
+  coupon_code?: string
   use_points?: boolean
   idempotency_key: string
   device?: string
+}
+
+export type CouponType = 'FIXED_AMOUNT' | 'PERCENTAGE'
+export type CouponStatus = 'UNUSED' | 'USED'
+
+export interface CouponPreviewResult {
+  coupon_id: string
+  code: string
+  name: string
+  type: CouponType
+  discount_value: number
+  min_order_amount: number
+  eligible_amount: number
+  discount_amount: number
+  total_amount: number
+  actual_amount: number
+  applies_to_all_products: boolean
+  eligible_product_ids: string[]
+}
+
+export interface CouponProductRef {
+  id: string
+  title: string
+}
+
+export interface CouponItem {
+  id: string
+  code: string
+  name: string
+  type: CouponType
+  discount_value: number
+  min_order_amount: number
+  status: CouponStatus
+  applies_to_all_products: boolean
+  applicable_product_ids: string[]
+  applicable_products: CouponProductRef[]
+  used_order_id?: string | null
+  used_at?: string | null
+  created_at?: string
+  updated_at?: string
 }
 
 // ============================================================

@@ -12,6 +12,7 @@ import com.orionkey.model.response.UserProfileResponse;
 import com.orionkey.repository.OrderRepository;
 import com.orionkey.repository.PointsLogRepository;
 import com.orionkey.repository.UserRepository;
+import com.orionkey.service.CouponService;
 import com.orionkey.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -33,6 +34,7 @@ public class UserServiceImpl implements UserService {
     private final OrderRepository orderRepository;
     private final PointsLogRepository pointsLogRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CouponService couponService;
 
     @Override
     public UserProfileResponse getProfile(UUID userId) {
@@ -77,6 +79,7 @@ public class UserServiceImpl implements UserService {
             if (o.getStatus() == OrderStatus.PENDING && o.getExpiresAt().isBefore(now)) {
                 o.setStatus(OrderStatus.EXPIRED);
                 orderRepository.save(o);
+                couponService.releaseCouponForOrder(o);
             }
         }
 
@@ -106,6 +109,8 @@ public class UserServiceImpl implements UserService {
         map.put("status", o.getStatus().name());
         map.put("order_type", o.getOrderType().name());
         map.put("payment_method", o.getPaymentMethod());
+        map.put("coupon_code", o.getCouponCode());
+        map.put("coupon_discount", o.getCouponDiscount());
         map.put("created_at", o.getCreatedAt());
         return map;
     }

@@ -14,6 +14,7 @@ import com.orionkey.service.BepusdtService;
 import com.orionkey.service.BepusdtService.BepusdtConfig;
 import com.orionkey.service.BepusdtService.BepusdtPaymentResult;
 import com.orionkey.service.CodepayService;
+import com.orionkey.service.CouponService;
 import com.orionkey.service.EpayService;
 import com.orionkey.service.EpayService.ChannelConfig;
 import com.orionkey.service.EpayService.EpayResult;
@@ -46,6 +47,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final CodepayService codepayService;
     private final BepusdtService bepusdtService;
     private final ObjectMapper objectMapper;
+    private final CouponService couponService;
 
     @Override
     public Map<String, Object> createPayment(UUID orderId, String paymentMethod, BigDecimal amount) {
@@ -304,6 +306,7 @@ public class PaymentServiceImpl implements PaymentService {
         if (order.getExpiresAt().isBefore(java.time.LocalDateTime.now())) {
             order.setStatus(com.orionkey.constant.OrderStatus.EXPIRED);
             orderRepository.save(order);
+            couponService.releaseCouponForOrder(order);
             throw new BusinessException(ErrorCode.ORDER_EXPIRED, "订单已过期");
         }
 

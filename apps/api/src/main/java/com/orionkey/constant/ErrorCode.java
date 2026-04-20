@@ -39,6 +39,10 @@ public final class ErrorCode {
     public static final int PURCHASE_LIMIT = 40006;
     public static final int UNPAID_ORDER_EXISTS = 40007;
     public static final int CART_EMPTY = 40008;
+    public static final int COUPON_NOT_FOUND = 40009;
+    public static final int COUPON_ALREADY_USED = 40010;
+    public static final int COUPON_NOT_APPLICABLE = 40011;
+    public static final int COUPON_INVALID = 40012;
 
     // ── Payment 50001~50099 ──
     public static final int CHANNEL_UNAVAILABLE = 50001;

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { ShoppingBag, Mail, CreditCard, Lock } from "lucide-react"
 import { toast } from "sonner"
 import { useLocale, useCart } from "@/lib/context"
-import { orderApi, paymentApi, withMockFallback, getApiErrorMessage } from "@/services/api"
+import { couponApi, orderApi, paymentApi, withMockFallback, getApiErrorMessage } from "@/services/api"
 import { mockPaymentChannels, mockCreateOrder } from "@/lib/mock-data"
 import {
   validateEmail,
@@ -19,7 +19,7 @@ import {
 import { PaymentSelector } from "@/components/shared/payment-selector"
 import { Turnstile, useTurnstile } from "@/components/shared/turnstile"
 import { setTurnstileHeaders } from "@/services/api"
-import type { PaymentChannelItem } from "@/types"
+import type { CouponPreviewResult, PaymentChannelItem } from "@/types"
 
 export default function CheckoutPage() {
   const { t } = useLocale()
@@ -29,9 +29,13 @@ export default function CheckoutPage() {
   const [email, setEmail] = useState("")
   const [channels, setChannels] = useState<PaymentChannelItem[]>([])
   const [selectedPayment, setSelectedPayment] = useState("")
+  const [couponCode, setCouponCode] = useState("")
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponPreviewResult | null>(null)
+  const [applyingCoupon, setApplyingCoupon] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const emailInputRef = useRef<HTMLInputElement>(null)
   const { turnstileToken, setTurnstileToken, handleTurnstileReset } = useTurnstile()
+  const payableAmount = appliedCoupon ? appliedCoupon.actual_amount : totalAmount
 
   // Fetch payment channels on mount
   useEffect(() => {
@@ -57,6 +61,46 @@ export default function CheckoutPage() {
     return () => { cancelled = true }
   }, [])
 
+  useEffect(() => {
+    setAppliedCoupon(null)
+  }, [itemCount, totalAmount])
+
+  const handleApplyCoupon = async () => {
+    const code = couponCode.trim()
+    if (!code) {
+      toast.error("请输入优惠券码")
+      return
+    }
+    if (items.length === 0) {
+      toast.error("购物车为空")
+      return
+    }
+    setApplyingCoupon(true)
+    try {
+      const result = await couponApi.preview({
+        code,
+        items: items.map((item) => ({
+          product_id: item.product_id,
+          spec_id: item.spec_id,
+          quantity: item.quantity,
+        })),
+      })
+      setAppliedCoupon(result)
+      setCouponCode(result.code)
+      toast.success(`优惠券已生效，已减免 ¥${result.discount_amount.toFixed(2)}`)
+    } catch (err: unknown) {
+      setAppliedCoupon(null)
+      toast.error(getApiErrorMessage(err, t))
+    } finally {
+      setApplyingCoupon(false)
+    }
+  }
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null)
+    setCouponCode("")
+  }
+
   const handleConfirmOrder = async () => {
     if (!email.trim()) {
       toast.error(t("product.emailRequired"))
@@ -81,6 +125,7 @@ export default function CheckoutPage() {
         () => orderApi.createFromCart({
           email,
           payment_method: selectedPayment,
+          coupon_code: appliedCoupon?.code,
           idempotency_key: generateIdempotencyKey(),
           device,
         }),
@@ -157,6 +202,20 @@ export default function CheckoutPage() {
                 {getCurrencySymbol(items[0]?.currency)}{totalAmount.toFixed(2)}
               </span>
             </div>
+            {appliedCoupon && (
+              <>
+                <div className="flex items-center justify-between text-sm text-emerald-600">
+                  <span>优惠券折扣</span>
+                  <span>-{getCurrencySymbol(items[0]?.currency)}{appliedCoupon.discount_amount.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between border-t border-border pt-3">
+                  <span className="text-base font-medium text-foreground">实付金额</span>
+                  <span className="text-2xl font-bold text-primary">
+                    {getCurrencySymbol(items[0]?.currency)}{payableAmount.toFixed(2)}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -179,6 +238,52 @@ export default function CheckoutPage() {
           <p className="text-xs text-muted-foreground">
             {t("product.emailFullHint")}
           </p>
+        </div>
+
+        <div className="rounded-lg border border-border bg-background p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <ShoppingBag className="h-5 w-5 text-primary" />
+            <h2 className="text-base font-semibold text-foreground">优惠券</h2>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={couponCode}
+              onChange={(e) => {
+                setCouponCode(e.target.value.toUpperCase())
+                if (appliedCoupon) setAppliedCoupon(null)
+              }}
+              placeholder="输入优惠券码"
+              className="h-10 flex-1 rounded-lg border border-input bg-background px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            {appliedCoupon ? (
+              <button
+                type="button"
+                onClick={handleRemoveCoupon}
+                className="rounded-lg border border-input px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                移除
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleApplyCoupon}
+                disabled={applyingCoupon}
+                className="rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                {applyingCoupon ? "校验中..." : "应用"}
+              </button>
+            )}
+          </div>
+          {appliedCoupon && (
+            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              <p className="font-medium">{appliedCoupon.name}</p>
+              {appliedCoupon.min_order_amount > 0 && (
+                <p>门槛 ¥{appliedCoupon.min_order_amount.toFixed(2)}，已命中 ¥{appliedCoupon.eligible_amount.toFixed(2)}</p>
+              )}
+              <p>已优惠 ¥{appliedCoupon.discount_amount.toFixed(2)}，待支付 ¥{appliedCoupon.actual_amount.toFixed(2)}</p>
+            </div>
+          )}
         </div>
 
         {/* Payment method */}
@@ -224,7 +329,7 @@ export default function CheckoutPage() {
               {t("checkout.processingOrder")}
             </span>
           ) : (
-            <>{t("checkout.confirmOrder")} {getCurrencySymbol(items[0]?.currency)}{totalAmount.toFixed(2)}</>
+            <>{t("checkout.confirmOrder")} {getCurrencySymbol(items[0]?.currency)}{payableAmount.toFixed(2)}</>
           )}
         </button>
       </div>

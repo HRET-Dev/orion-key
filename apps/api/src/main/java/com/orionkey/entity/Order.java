@@ -45,6 +45,13 @@ public class Order extends BaseEntity {
     @Column(precision = 10, scale = 2)
     private BigDecimal pointsDiscount = BigDecimal.ZERO;
 
+    private UUID couponId;
+
+    private String couponCode;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal couponDiscount = BigDecimal.ZERO;
+
     private LocalDateTime expiresAt;
 
     private LocalDateTime paidAt;

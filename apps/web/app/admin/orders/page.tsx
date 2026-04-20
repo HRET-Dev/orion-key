@@ -340,7 +340,14 @@ export default function AdminOrdersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-medium text-foreground">¥{order.actual_amount.toFixed(2)}</span>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium text-foreground">¥{order.actual_amount.toFixed(2)}</span>
+                        {order.coupon_code && (order.coupon_discount ?? 0) > 0 && (
+                          <span className="text-xs text-emerald-600">
+                            {order.coupon_code} -¥{(order.coupon_discount ?? 0).toFixed(2)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <span className={cn(
@@ -495,8 +502,18 @@ export default function AdminOrdersPage() {
 
               <div className="grid grid-cols-2 gap-x-8 gap-y-4">
                 <div className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">订单原价</span>
+                  <span className="text-sm text-foreground">¥{showDetail.total_amount.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col gap-1">
                   <span className="text-xs text-muted-foreground">支付金额</span>
                   <span className="text-sm font-medium text-foreground">¥{showDetail.actual_amount.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">优惠券</span>
+                  <span className="text-sm text-foreground">
+                    {showDetail.coupon_code ? `${showDetail.coupon_code} (-¥${(showDetail.coupon_discount ?? 0).toFixed(2)})` : "-"}
+                  </span>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-xs text-muted-foreground">支付方式</span>
