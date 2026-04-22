@@ -23,6 +23,7 @@ import type {
   CardKeyStockSummary,
   CardKeyListItem,
   CardImportBatch,
+  CardKeyExportResult,
   OrderCardKey,
   AdminUserItem,
   AdminOrderItem,
@@ -542,6 +543,15 @@ export const adminCardKeyApi = {
     const qs = buildQuery(params)
     return request<PaginatedData<CardImportBatch>>(`/admin/card-keys/import-batches?${qs}`)
   },
+  update: (id: string, data: { content: string }) =>
+    request<null>(`/admin/card-keys/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<null>(`/admin/card-keys/${id}`, { method: "DELETE" }),
+  batchDelete: (data: { card_key_ids: string[] }) =>
+    request<{ deleted_count: number }>("/admin/card-keys/batch-delete", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   invalidate: (id: string) =>
     request<null>(`/admin/card-keys/${id}/invalidate`, { method: "POST" }),
   batchInvalidate: (params: { product_id: string; spec_id?: string | null }) => {
@@ -554,6 +564,15 @@ export const adminCardKeyApi = {
     target_spec_id?: string | null
   }) =>
     request<{ migrated_count: number }>("/admin/card-keys/batch-migrate", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  export: (params: { product_id: string; spec_id?: string | null }) => {
+    const qs = buildQuery(params)
+    return request<CardKeyExportResult>(`/admin/card-keys/export?${qs}`)
+  },
+  exportSelected: (data: { card_key_ids: string[] }) =>
+    request<CardKeyExportResult>("/admin/card-keys/export-selected", {
       method: "POST",
       body: JSON.stringify(data),
     }),

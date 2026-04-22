@@ -449,6 +449,12 @@ export interface CardImportBatch {
   created_at: string
 }
 
+export interface CardKeyExportResult {
+  filename: string
+  content: string
+  export_count: number
+}
+
 export interface OrderCardKey {
   card_key_id: string
   content: string

@@ -17,6 +17,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Slf4j
@@ -164,6 +166,45 @@ public class AdminCardKeyServiceImpl implements AdminCardKeyService {
 
     @Override
     @Transactional
+    public void updateCardKey(UUID id, String content) {
+        CardKey key = cardKeyRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "卡密不存在"));
+
+        validateCardKeyEditable(key, "修改");
+
+        String normalizedContent = normalizeContent(content);
+        if (cardKeyRepository.existsByContentAndProductIdAndSpecIdAndIdNot(
+                id, normalizedContent, key.getProductId(), key.getSpecId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "同一库存池内已存在相同卡密");
+        }
+
+        key.setContent(normalizedContent);
+        cardKeyRepository.save(key);
+    }
+
+    @Override
+    @Transactional
+    public void deleteCardKey(UUID id) {
+        CardKey key = cardKeyRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "卡密不存在"));
+
+        validateCardKeyEditable(key, "删除");
+        cardKeyRepository.delete(key);
+    }
+
+    @Override
+    @Transactional
+    public int batchDeleteCardKeys(List<UUID> cardKeyIds) {
+        List<CardKey> selectedKeys = getDistinctCardKeys(cardKeyIds, "请选择要删除的卡密");
+        for (CardKey key : selectedKeys) {
+            validateCardKeyEditable(key, "删除");
+        }
+        cardKeyRepository.deleteAll(selectedKeys);
+        return selectedKeys.size();
+    }
+
+    @Override
+    @Transactional
     public void invalidateCardKey(UUID id) {
         CardKey key = cardKeyRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "卡密不存在"));
@@ -234,6 +275,69 @@ public class AdminCardKeyServiceImpl implements AdminCardKeyService {
         }
         cardKeyRepository.saveAll(selectedKeys);
         return selectedKeys.size();
+    }
+
+    @Override
+    public Map<String, Object> exportCardKeys(UUID productId, UUID specId) {
+        Product product = validateProductAndSpec(productId, specId, false);
+        List<CardKey> keys = cardKeyRepository.findAllByProductIdAndOptionalSpecId(productId, specId);
+        if (keys.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前库存池没有可导出的卡密");
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("card_key,status,created_at,order_id,sold_at").append("\n");
+        for (CardKey key : keys) {
+            sb.append(csvValue(key.getContent())).append(",")
+                    .append(csvValue(key.getStatus().name())).append(",")
+                    .append(csvValue(formatDateTime(key.getCreatedAt()))).append(",")
+                    .append(csvValue(key.getOrderId() != null ? key.getOrderId().toString() : "")).append(",")
+                    .append(csvValue(formatDateTime(key.getSoldAt()))).append("\n");
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("filename", buildExportFilename(product, specId));
+        result.put("content", sb.toString());
+        result.put("export_count", keys.size());
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> exportCardKeysByIds(List<UUID> cardKeyIds) {
+        List<CardKey> selectedKeys = getDistinctCardKeys(cardKeyIds, "请选择要导出的卡密");
+
+        Map<String, String> productTitleMap = new HashMap<>();
+        Map<UUID, String> specNameMap = new HashMap<>();
+        for (CardKey key : selectedKeys) {
+            productTitleMap.computeIfAbsent(key.getProductId(), id -> productRepository.findById(id)
+                    .filter(product -> product.getIsDeleted() == 0)
+                    .map(Product::getTitle)
+                    .orElse("已删除商品"));
+            if (key.getSpecId() != null) {
+                specNameMap.computeIfAbsent(key.getSpecId(), id -> productSpecRepository.findById(id)
+                        .filter(spec -> spec.getIsDeleted() == 0)
+                        .map(spec -> spec.getName())
+                        .orElse("已删除规格"));
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("card_key,status,product_title,spec_name,created_at,order_id,sold_at").append("\n");
+        for (CardKey key : selectedKeys) {
+            sb.append(csvValue(key.getContent())).append(",")
+                    .append(csvValue(key.getStatus().name())).append(",")
+                    .append(csvValue(productTitleMap.getOrDefault(key.getProductId(), ""))).append(",")
+                    .append(csvValue(key.getSpecId() != null ? specNameMap.getOrDefault(key.getSpecId(), "") : "")).append(",")
+                    .append(csvValue(formatDateTime(key.getCreatedAt()))).append(",")
+                    .append(csvValue(key.getOrderId() != null ? key.getOrderId().toString() : "")).append(",")
+                    .append(csvValue(formatDateTime(key.getSoldAt()))).append("\n");
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("filename", "selected-card-keys-" + System.currentTimeMillis() + ".csv");
+        result.put("content", sb.toString());
+        result.put("export_count", selectedKeys.size());
+        return result;
     }
 
     @Override
@@ -324,10 +428,69 @@ public class AdminCardKeyServiceImpl implements AdminCardKeyService {
         return product;
     }
 
+    private void validateCardKeyEditable(CardKey key, String action) {
+        if (key.getStatus() == CardKeyStatus.SOLD) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "已售出的卡密不可" + action);
+        }
+        if (key.getStatus() == CardKeyStatus.LOCKED) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "锁定中的卡密不可" + action);
+        }
+    }
+
+    private String normalizeContent(String content) {
+        String normalized = content != null ? content.trim() : "";
+        if (normalized.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "卡密内容不能为空");
+        }
+        if (normalized.contains("\n") || normalized.contains("\r")) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "卡密内容不能包含换行");
+        }
+        return normalized;
+    }
+
     private String abbreviateContent(String content) {
         if (content == null || content.length() <= 24) {
             return content;
         }
         return content.substring(0, 24) + "...";
+    }
+
+    private String buildExportFilename(Product product, UUID specId) {
+        String productPart = sanitizeFilenameSegment(product.getTitle());
+        String specPart = specId != null ? "-spec-" + specId : "-default";
+        return "card-keys-" + productPart + specPart + ".csv";
+    }
+
+    private String sanitizeFilenameSegment(String value) {
+        if (value == null || value.isBlank()) {
+            return "product";
+        }
+        String sanitized = value.trim()
+                .replaceAll("[^a-zA-Z0-9\\-_]+", "-")
+                .replaceAll("-{2,}", "-")
+                .replaceAll("^-|-$", "");
+        return sanitized.isBlank() ? "product" : sanitized;
+    }
+
+    private String formatDateTime(LocalDateTime value) {
+        return value == null ? "" : value.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+    }
+
+    private String csvValue(String value) {
+        String safe = value == null ? "" : value;
+        return "\"" + safe.replace("\"", "\"\"") + "\"";
+    }
+
+    private List<CardKey> getDistinctCardKeys(List<UUID> cardKeyIds, String emptyMessage) {
+        if (cardKeyIds == null || cardKeyIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, emptyMessage);
+        }
+
+        List<UUID> distinctIds = cardKeyIds.stream().distinct().toList();
+        List<CardKey> selectedKeys = cardKeyRepository.findAllById(distinctIds);
+        if (selectedKeys.size() != distinctIds.size()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "部分卡密不存在或已被删除");
+        }
+        return selectedKeys;
     }
 }

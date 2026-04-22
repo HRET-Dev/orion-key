@@ -61,6 +61,12 @@ public interface CardKeyRepository extends JpaRepository<CardKey, UUID> {
                                                     @Param("specId") UUID specId,
                                                     Pageable pageable);
 
+    @Query("SELECT ck FROM CardKey ck WHERE ck.productId = :productId " +
+            "AND ((:specId IS NULL AND ck.specId IS NULL) OR ck.specId = :specId) " +
+            "ORDER BY ck.createdAt DESC")
+    List<CardKey> findAllByProductIdAndOptionalSpecId(@Param("productId") UUID productId,
+                                                      @Param("specId") UUID specId);
+
     @Query("SELECT ck.status, COUNT(ck) FROM CardKey ck " +
             "WHERE ck.productId = :productId AND ((:specId IS NULL AND ck.specId IS NULL) OR ck.specId = :specId) " +
             "GROUP BY ck.status")

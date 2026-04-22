@@ -7,8 +7,11 @@ import {
   Ban,
   Package,
   ArrowRightLeft,
+  Download,
   KeyRound,
+  Pencil,
   AlertCircle,
+  Trash2,
   X,
   FileText,
   ChevronDown,
@@ -26,7 +29,7 @@ import {
 } from "@/lib/mock-data"
 import { Modal } from "@/components/ui/modal"
 import { Checkbox } from "@/components/ui/checkbox"
-import type { CardKeyStockSummary, CardKeyListItem, CardImportBatch, ProductCard, ProductDetail, ProductSpec } from "@/types"
+import type { CardKeyStockSummary, CardKeyListItem, CardImportBatch, CardKeyExportResult, ProductCard, ProductDetail, ProductSpec } from "@/types"
 
 export default function AdminCardKeysPage() {
   const { t } = useLocale()
@@ -242,6 +245,48 @@ export default function AdminCardKeysPage() {
   // Single invalidate confirmation state
   const [singleInvalidateTarget, setSingleInvalidateTarget] = useState<CardKeyListItem | null>(null)
   const [singleInvalidating, setSingleInvalidating] = useState(false)
+  const [editingKey, setEditingKey] = useState<CardKeyListItem | null>(null)
+  const [editContent, setEditContent] = useState("")
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<CardKeyListItem | null>(null)
+  const [deletingKey, setDeletingKey] = useState(false)
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
+  const [batchDeleting, setBatchDeleting] = useState(false)
+  const [exportingPoolKey, setExportingPoolKey] = useState("")
+  const [exportingSelected, setExportingSelected] = useState(false)
+
+  const getPoolKey = (item: CardKeyStockSummary) => `${item.product_id}:${item.spec_id ?? "default"}`
+
+  const canEditOrDeleteKey = (key: CardKeyListItem) => key.status === "AVAILABLE" || key.status === "INVALID"
+  const canSelectKey = (key: CardKeyListItem) => canEditOrDeleteKey(key)
+
+  const downloadExportFile = (filename: string, content: string) => {
+    const blob = new Blob(["\uFEFF", content], { type: "text/csv;charset=utf-8" })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  }
+
+  const buildMockExportResult = (item: CardKeyStockSummary): CardKeyExportResult => {
+    const isCurrentPool = detailItem?.product_id === item.product_id && (detailItem?.spec_id ?? "") === (item.spec_id ?? "")
+    const rows = isCurrentPool
+      ? detailKeys.map((key) =>
+          `"${key.content.replace(/"/g, "\"\"")}","${key.status}","${key.created_at}","${key.order_id ?? ""}","${key.sold_at ?? ""}"`
+        )
+      : Array.from({ length: item.total }, (_, index) =>
+          `"MOCK-CARDKEY-${index + 1}","","","",""`
+        )
+    return {
+      filename: `card-keys-${item.product_id}-${item.spec_id ?? "default"}.csv`,
+      content: ["card_key,status,created_at,order_id,sold_at", ...rows].join("\n"),
+      export_count: isCurrentPool ? detailKeys.length : item.total,
+    }
+  }
 
   const handleBatchInvalidate = async () => {
     if (!showInvalidateConfirm) return
@@ -303,7 +348,7 @@ export default function AdminCardKeysPage() {
 
   const handleBatchMigrate = async () => {
     if (!showMigrateModal) return
-    if (selectedKeyIds.length === 0) {
+    if (selectedAvailableKeyIds.length === 0) {
       toast.error("请选择要迁移的可用卡密")
       return
     }
@@ -326,11 +371,11 @@ export default function AdminCardKeysPage() {
     try {
       const result = await withMockFallback(
         () => adminCardKeyApi.batchMigrate({
-          card_key_ids: selectedKeyIds,
+          card_key_ids: selectedAvailableKeyIds,
           target_product_id: targetProductId,
           target_spec_id: targetSpecId || null,
         }),
-        () => ({ migrated_count: selectedKeyIds.length })
+        () => ({ migrated_count: selectedAvailableKeyIds.length })
       )
       toast.success(`已迁移 ${result.migrated_count} 条可用卡密`)
       const currentDetailItem = detailItem
@@ -366,6 +411,144 @@ export default function AdminCardKeysPage() {
     }
   }
 
+  const handleExportKeys = async (item: CardKeyStockSummary) => {
+    const poolKey = getPoolKey(item)
+    setExportingPoolKey(poolKey)
+    try {
+      const result = await withMockFallback(
+        () => adminCardKeyApi.export({
+          product_id: item.product_id,
+          spec_id: item.spec_id,
+        }),
+        () => buildMockExportResult(item)
+      )
+      downloadExportFile(result.filename, result.content)
+      toast.success(`已导出 ${result.export_count} 条卡密`)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "导出失败")
+    } finally {
+      setExportingPoolKey("")
+    }
+  }
+
+  const handleExportSelectedKeys = async () => {
+    if (selectedKeyIds.length === 0) {
+      toast.error("请先选择要导出的卡密")
+      return
+    }
+
+    setExportingSelected(true)
+    try {
+      const result = await withMockFallback(
+        () => adminCardKeyApi.exportSelected({ card_key_ids: selectedKeyIds }),
+        () => ({
+          filename: `selected-card-keys-${Date.now()}.csv`,
+          content: [
+            "card_key,status,created_at,order_id,sold_at",
+            ...detailKeys
+              .filter((key) => selectedKeyIds.includes(key.id))
+              .map((key) =>
+                `"${key.content.replace(/"/g, "\"\"")}","${key.status}","${key.created_at}","${key.order_id ?? ""}","${key.sold_at ?? ""}"`
+              ),
+          ].join("\n"),
+          export_count: selectedKeyIds.length,
+        })
+      )
+      downloadExportFile(result.filename, result.content)
+      toast.success(`已导出 ${result.export_count} 条所选卡密`)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "导出失败")
+    } finally {
+      setExportingSelected(false)
+    }
+  }
+
+  const openEditModal = (key: CardKeyListItem) => {
+    setEditingKey(key)
+    setEditContent(key.content)
+  }
+
+  const handleUpdateKey = async () => {
+    if (!editingKey) return
+    const content = editContent.trim()
+    if (!content) {
+      toast.error("卡密内容不能为空")
+      return
+    }
+
+    setSavingEdit(true)
+    try {
+      await withMockFallback(
+        () => adminCardKeyApi.update(editingKey.id, { content }),
+        () => null
+      )
+      toast.success("卡密已更新")
+      setEditingKey(null)
+      if (detailItem) {
+        await fetchDetailKeys(detailItem, detailPage)
+      }
+      await fetchStock()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "更新失败")
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const handleDeleteKey = async () => {
+    if (!deleteTarget) return
+    setDeletingKey(true)
+    try {
+      await withMockFallback(
+        () => adminCardKeyApi.delete(deleteTarget.id),
+        () => null
+      )
+      toast.success("卡密已删除")
+      const nextPage = detailKeys.length === 1 && detailPage > 1 ? detailPage - 1 : detailPage
+      setDeleteTarget(null)
+      if (detailItem) {
+        if (nextPage !== detailPage) {
+          setDetailPage(nextPage)
+        }
+        await fetchDetailKeys(detailItem, nextPage)
+      }
+      await fetchStock()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "删除失败")
+    } finally {
+      setDeletingKey(false)
+    }
+  }
+
+  const handleBatchDeleteKeys = async () => {
+    if (selectedKeyIds.length === 0) {
+      toast.error("请先选择要删除的卡密")
+      return
+    }
+
+    setBatchDeleting(true)
+    try {
+      const result = await withMockFallback(
+        () => adminCardKeyApi.batchDelete({ card_key_ids: selectedKeyIds }),
+        () => ({ deleted_count: selectedKeyIds.length })
+      )
+      toast.success(`已删除 ${result.deleted_count} 条卡密`)
+      const nextPage = detailKeys.length === selectedKeyIds.length && detailPage > 1 ? detailPage - 1 : detailPage
+      setShowBatchDeleteConfirm(false)
+      if (detailItem) {
+        if (nextPage !== detailPage) {
+          setDetailPage(nextPage)
+        }
+        await fetchDetailKeys(detailItem, nextPage)
+      }
+      await fetchStock()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "删除失败")
+    } finally {
+      setBatchDeleting(false)
+    }
+  }
+
   const openMigrateModal = (item: CardKeyStockSummary) => {
     setTargetProductId("")
     setTargetSpecId("")
@@ -374,8 +557,11 @@ export default function AdminCardKeysPage() {
     setShowMigrateModal(item)
   }
 
-  const availableKeysOnPage = detailKeys.filter((key) => key.status === "AVAILABLE")
-  const allAvailableSelected = availableKeysOnPage.length > 0 && availableKeysOnPage.every((key) => selectedKeyIds.includes(key.id))
+  const selectableKeysOnPage = detailKeys.filter(canSelectKey)
+  const selectedAvailableKeyIds = detailKeys
+    .filter((key) => key.status === "AVAILABLE" && selectedKeyIds.includes(key.id))
+    .map((key) => key.id)
+  const allSelectableSelected = selectableKeysOnPage.length > 0 && selectableKeysOnPage.every((key) => selectedKeyIds.includes(key.id))
 
   const toggleKeySelection = (id: string, checked: boolean) => {
     setSelectedKeyIds((prev) => checked
@@ -383,8 +569,8 @@ export default function AdminCardKeysPage() {
       : prev.filter((item) => item !== id))
   }
 
-  const toggleSelectAllAvailable = (checked: boolean) => {
-    setSelectedKeyIds(checked ? availableKeysOnPage.map((key) => key.id) : [])
+  const toggleSelectAllSelectable = (checked: boolean) => {
+    setSelectedKeyIds(checked ? selectableKeysOnPage.map((key) => key.id) : [])
   }
 
   if (loading) {
@@ -515,6 +701,15 @@ export default function AdminCardKeysPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                            title="导出当前库存池"
+                            onClick={() => handleExportKeys(item)}
+                            disabled={exportingPoolKey === getPoolKey(item)}
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
                           <button
                             type="button"
                             className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
@@ -685,13 +880,26 @@ export default function AdminCardKeysPage() {
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => { setShowDetailModal(false); setSelectedKeyIds([]) }}
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {detailItem && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                onClick={() => handleExportKeys(detailItem)}
+                disabled={exportingPoolKey === getPoolKey(detailItem)}
+              >
+                <Download className="h-4 w-4" />
+                {exportingPoolKey === getPoolKey(detailItem) ? "导出中..." : "导出当前库存池"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { setShowDetailModal(false); setSelectedKeyIds([]) }}
+              className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
         <div className="p-6">
           {detailLoading ? (
@@ -704,17 +912,38 @@ export default function AdminCardKeysPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-muted-foreground">
-                  已选择 <span className="font-medium text-foreground">{selectedKeyIds.length}</span> 条可用卡密
+                  已选择 <span className="font-medium text-foreground">{selectedKeyIds.length}</span> 条卡密，可迁移
+                  <span className="mx-1 font-medium text-foreground">{selectedAvailableKeyIds.length}</span> 条可用卡密
                 </p>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 transition-colors disabled:opacity-50"
-                  onClick={() => detailItem && openMigrateModal(detailItem)}
-                  disabled={selectedKeyIds.length === 0}
-                >
-                  <ArrowRightLeft className="h-4 w-4" />
-                  迁移所选卡密
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                    onClick={handleExportSelectedKeys}
+                    disabled={selectedKeyIds.length === 0 || exportingSelected}
+                  >
+                    <Download className="h-4 w-4" />
+                    {exportingSelected ? "导出中..." : "导出所选卡密"}
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
+                    onClick={() => setShowBatchDeleteConfirm(true)}
+                    disabled={selectedKeyIds.length === 0}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    删除所选卡密
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 transition-colors disabled:opacity-50"
+                    onClick={() => detailItem && openMigrateModal(detailItem)}
+                    disabled={selectedAvailableKeyIds.length === 0}
+                  >
+                    <ArrowRightLeft className="h-4 w-4" />
+                    迁移所选卡密
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm table-fixed" onCopy={(e) => { const t = window.getSelection()?.toString(); if (t) { e.clipboardData.setData("text/plain", stripInvisible(t)); e.preventDefault() } }}>
@@ -722,10 +951,10 @@ export default function AdminCardKeysPage() {
                     <tr className="border-b border-border bg-muted/30">
                       <th className="w-[6%] px-3 py-2 text-left font-medium text-muted-foreground">
                         <Checkbox
-                          checked={allAvailableSelected}
-                          onCheckedChange={(checked) => toggleSelectAllAvailable(Boolean(checked))}
-                          aria-label="选择当前页全部可用卡密"
-                          disabled={availableKeysOnPage.length === 0}
+                          checked={allSelectableSelected}
+                          onCheckedChange={(checked) => toggleSelectAllSelectable(Boolean(checked))}
+                          aria-label="选择当前页全部可操作卡密"
+                          disabled={selectableKeysOnPage.length === 0}
                         />
                       </th>
                       <th className="w-[30%] px-3 py-2 text-left font-medium text-muted-foreground">卡密内容</th>
@@ -740,7 +969,7 @@ export default function AdminCardKeysPage() {
                     {detailKeys.map((key) => (
                       <tr key={key.id} className="border-b border-border/50 last:border-0">
                         <td className="px-3 py-2">
-                          {key.status === "AVAILABLE" ? (
+                          {canSelectKey(key) ? (
                             <Checkbox
                               checked={selectedKeyIds.includes(key.id)}
                               onCheckedChange={(checked) => toggleKeySelection(key.id, Boolean(checked))}
@@ -770,16 +999,38 @@ export default function AdminCardKeysPage() {
                           {key.sold_at ? new Date(key.sold_at).toLocaleString() : "-"}
                         </td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">
-                          {(key.status === "AVAILABLE" || key.status === "LOCKED") && (
-                            <button
-                              type="button"
-                              className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                              title="作废此卡密"
-                              onClick={() => setSingleInvalidateTarget(key)}
-                            >
-                              <Ban className="h-3.5 w-3.5" />
-                            </button>
-                          )}
+                          <div className="flex items-center justify-end gap-1">
+                            {canEditOrDeleteKey(key) && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                                  title="修改卡密"
+                                  onClick={() => openEditModal(key)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                                  title="删除卡密"
+                                  onClick={() => setDeleteTarget(key)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                            {(key.status === "AVAILABLE" || key.status === "LOCKED") && (
+                              <button
+                                type="button"
+                                className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                                title="作废此卡密"
+                                onClick={() => setSingleInvalidateTarget(key)}
+                              >
+                                <Ban className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -813,6 +1064,127 @@ export default function AdminCardKeysPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Edit Card Key Modal */}
+      <Modal open={editingKey !== null} onClose={() => setEditingKey(null)} className="max-w-lg">
+        <div className="flex flex-col gap-4 p-6">
+          <div className="flex items-start gap-3">
+            <div className="rounded-full bg-sky-500/10 p-2">
+              <Pencil className="h-5 w-5 text-sky-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-base font-semibold text-foreground">修改卡密</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                仅支持修改未售出且未锁定的卡密，修改后会校验当前库存池内是否重复。
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-foreground">卡密内容</label>
+            <textarea
+              className="min-h-32 rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono text-foreground break-all focus:outline-none focus:ring-2 focus:ring-ring"
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              disabled={savingEdit}
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              className="rounded-lg border border-input bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+              onClick={() => setEditingKey(null)}
+              disabled={savingEdit}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 transition-colors disabled:opacity-50"
+              onClick={handleUpdateKey}
+              disabled={savingEdit}
+            >
+              {savingEdit ? "保存中..." : "保存修改"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Card Key Confirmation */}
+      <Modal open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} className="max-w-md">
+        <div className="flex flex-col gap-4 p-6">
+          <div className="flex items-start gap-3">
+            <div className="rounded-full bg-destructive/10 p-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-base font-semibold text-foreground">确认删除卡密</h3>
+              {deleteTarget && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  删除后该卡密会从库存中彻底移除，不会再保留为“已作废”状态。
+                  <br />
+                  <code className="mt-1 inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground break-all">
+                    {deleteTarget.content}
+                  </code>
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              className="rounded-lg border border-input bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deletingKey}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
+              onClick={handleDeleteKey}
+              disabled={deletingKey}
+            >
+              {deletingKey ? "删除中..." : "确认删除"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Batch Delete Card Keys Confirmation */}
+      <Modal open={showBatchDeleteConfirm} onClose={() => setShowBatchDeleteConfirm(false)} className="max-w-md">
+        <div className="flex flex-col gap-4 p-6">
+          <div className="flex items-start gap-3">
+            <div className="rounded-full bg-destructive/10 p-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-base font-semibold text-foreground">确认批量删除卡密</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                将删除当前选中的 <span className="font-medium text-foreground">{selectedKeyIds.length}</span> 条卡密。
+                这会直接从库存中移除，不会保留为“已作废”状态。
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              className="rounded-lg border border-input bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+              onClick={() => setShowBatchDeleteConfirm(false)}
+              disabled={batchDeleting}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
+              onClick={handleBatchDeleteKeys}
+              disabled={batchDeleting}
+            >
+              {batchDeleting ? "删除中..." : "确认批量删除"}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Single Invalidate Confirmation */}
@@ -868,7 +1240,7 @@ export default function AdminCardKeysPage() {
                 <p className="mt-1 text-sm text-muted-foreground">
                   将「{showMigrateModal.product_title}
                   {showMigrateModal.spec_name ? ` — ${showMigrateModal.spec_name}` : ""}」
-                  下选中的 <span className="font-medium text-foreground">{selectedKeyIds.length}</span> 条可用卡密迁移到其他商品。
+                  下选中的 <span className="font-medium text-foreground">{selectedAvailableKeyIds.length}</span> 条可用卡密迁移到其他商品。
                 </p>
               )}
             </div>
