@@ -306,7 +306,7 @@ public class AdminCardKeyServiceImpl implements AdminCardKeyService {
     public Map<String, Object> exportCardKeysByIds(List<UUID> cardKeyIds) {
         List<CardKey> selectedKeys = getDistinctCardKeys(cardKeyIds, "请选择要导出的卡密");
 
-        Map<String, String> productTitleMap = new HashMap<>();
+        Map<UUID, String> productTitleMap = new HashMap<>();
         Map<UUID, String> specNameMap = new HashMap<>();
         for (CardKey key : selectedKeys) {
             productTitleMap.computeIfAbsent(key.getProductId(), id -> productRepository.findById(id)
