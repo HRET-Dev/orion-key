@@ -387,13 +387,14 @@ export function AppProviders({ children }: { children: ReactNode }) {
         () => cartApi.updateItem(itemId, quantity),
         () => null
       )
+      await refreshCart()
     } catch (err) {
       // API 失败（如库存不足）→ 回滚到之前的状态
       setCartItems(prevItems)
       setCartTotal(prevTotal)
       throw err
     }
-  }, [cartItems, cartTotal])
+  }, [cartItems, cartTotal, refreshCart])
 
   const removeItem = useCallback(async (itemId: string) => {
     await withMockFallback(

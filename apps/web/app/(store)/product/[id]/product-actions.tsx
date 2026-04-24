@@ -49,7 +49,24 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
   const [submitting, setSubmitting] = useState(false)
   const { turnstileToken, setTurnstileToken, handleTurnstileReset } = useTurnstile()
 
-  const currentPrice = selectedSpec ? selectedSpec.price : product.base_price
+  const baseUnitPrice = selectedSpec ? selectedSpec.price : product.base_price
+  const wholesaleRules = useMemo(() => {
+    if (!product.wholesale_enabled) return []
+    const targetSpecId = selectedSpec?.id ?? null
+    return [...(product.wholesale_rules ?? [])]
+      .filter((rule) => (targetSpecId ? rule.spec_id === targetSpecId : !rule.spec_id))
+      .sort((a, b) => a.min_quantity - b.min_quantity)
+  }, [product.wholesale_enabled, product.wholesale_rules, selectedSpec?.id])
+  const matchedWholesaleRule = useMemo(() => {
+    let matched = null
+    for (const rule of wholesaleRules) {
+      if (quantity >= rule.min_quantity) {
+        matched = rule
+      }
+    }
+    return matched
+  }, [quantity, wholesaleRules])
+  const currentPrice = matchedWholesaleRule?.unit_price ?? baseUnitPrice
   const totalPrice = currentPrice * quantity
   const payablePrice = appliedCoupon ? appliedCoupon.actual_amount : totalPrice
   const currentStock = selectedSpec?.stock_available ?? product.stock_available ?? 0
@@ -222,6 +239,11 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
                 {currentPrice.toFixed(2)}
               </span>
             </div>
+            {currentPrice !== baseUnitPrice && (
+              <span className="text-sm text-muted-foreground line-through">
+                {getCurrencySymbol(product.currency)}{baseUnitPrice.toFixed(2)}
+              </span>
+            )}
           </div>
 
           {/* Delivery status indicator */}
@@ -263,6 +285,37 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
             </span>
           )}
         </div>
+
+        {wholesaleRules.length > 0 && (
+          <div className="rounded-lg border border-primary/15 bg-primary/5 p-3">
+            <p className="text-xs font-medium text-foreground">
+              档位价
+              {matchedWholesaleRule && (
+                <span className="ml-2 text-primary">
+                  已命中满 {matchedWholesaleRule.min_quantity} 件，每件 {getCurrencySymbol(product.currency)}{matchedWholesaleRule.unit_price.toFixed(2)}
+                </span>
+              )}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {wholesaleRules.map((rule) => {
+                const active = quantity >= rule.min_quantity
+                return (
+                  <div
+                    key={`${rule.spec_id ?? "default"}-${rule.min_quantity}`}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1.5 text-xs transition-colors",
+                      active
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-background text-muted-foreground"
+                    )}
+                  >
+                    满 {rule.min_quantity} 件 {getCurrencySymbol(product.currency)}{rule.unit_price.toFixed(2)}/件
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Spec selection */}
         {product.specs && product.specs.length > 1 && (

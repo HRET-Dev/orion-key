@@ -9,10 +9,64 @@ import { Modal } from "@/components/ui/modal"
 import { useLocale } from "@/lib/context"
 import { adminProductApi, adminCategoryApi, adminCardKeyApi, currencyApi, withMockFallback } from "@/services/api"
 import { mockCategories } from "@/lib/mock-data"
-import type { ProductDetail, Category, ProductSpec, CurrencyItem } from "@/types"
+import type { ProductDetail, Category, CurrencyItem, WholesaleRule } from "@/types"
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/svg+xml"]
 const ALLOWED_IMAGE_ACCEPT = ".jpg,.jpeg,.png,.gif,.webp,.bmp,.svg"
+const DEFAULT_WHOLESALE_TARGET = "__default__"
+
+type SpecDraft = {
+  client_id: string
+  id?: string
+  name: string
+  price: string
+  card_key_count?: number
+}
+
+type WholesaleRuleDraft = {
+  min_quantity: string
+  unit_price: string
+}
+
+function createSpecDraft(spec?: Partial<Omit<SpecDraft, "client_id">>): SpecDraft {
+  return {
+    client_id: `spec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: "",
+    price: "",
+    ...spec,
+  }
+}
+
+function createWholesaleRuleDraft(rule?: Partial<WholesaleRuleDraft>): WholesaleRuleDraft {
+  return {
+    min_quantity: "",
+    unit_price: "",
+    ...rule,
+  }
+}
+
+function createEmptyWholesaleRuleMap() {
+  return { [DEFAULT_WHOLESALE_TARGET]: [] } as Record<string, WholesaleRuleDraft[]>
+}
+
+function getWholesaleTargetKey(specId?: string | null) {
+  return specId ?? DEFAULT_WHOLESALE_TARGET
+}
+
+function buildWholesaleRuleMap(rules: WholesaleRule[] = []) {
+  const ruleMap = createEmptyWholesaleRuleMap()
+  for (const rule of rules) {
+    const targetKey = getWholesaleTargetKey(rule.spec_id)
+    if (!ruleMap[targetKey]) {
+      ruleMap[targetKey] = []
+    }
+    ruleMap[targetKey].push(createWholesaleRuleDraft({
+      min_quantity: String(rule.min_quantity),
+      unit_price: String(rule.unit_price),
+    }))
+  }
+  return ruleMap
+}
 
 function validateImageFile(file: File): string | null {
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
@@ -68,7 +122,9 @@ export default function AdminProductsPage() {
     sort_order: "",
     delivery_type: "AUTO",
   })
-  const [formSpecs, setFormSpecs] = useState<{ id?: string; name: string; price: string; card_key_count?: number }[]>([])
+  const [formSpecs, setFormSpecs] = useState<SpecDraft[]>([])
+  const [wholesaleRulesByTarget, setWholesaleRulesByTarget] = useState<Record<string, WholesaleRuleDraft[]>>(createEmptyWholesaleRuleMap)
+  const [selectedWholesaleTarget, setSelectedWholesaleTarget] = useState(DEFAULT_WHOLESALE_TARGET)
   const [specDeleteConfirm, setSpecDeleteConfirm] = useState<{ idx: number; name: string; count: number } | null>(null)
 
   // Import modal state
@@ -141,6 +197,27 @@ export default function AdminProductsPage() {
 
   useEffect(() => { fetchProducts() }, [fetchProducts])
 
+  useEffect(() => {
+    if (!specsEnabled) {
+      if (selectedWholesaleTarget !== DEFAULT_WHOLESALE_TARGET) {
+        setSelectedWholesaleTarget(DEFAULT_WHOLESALE_TARGET)
+      }
+      return
+    }
+
+    const targetKeys = formSpecs.map(spec => spec.id ?? spec.client_id)
+    if (targetKeys.length === 0) {
+      if (selectedWholesaleTarget !== DEFAULT_WHOLESALE_TARGET) {
+        setSelectedWholesaleTarget(DEFAULT_WHOLESALE_TARGET)
+      }
+      return
+    }
+
+    if (!targetKeys.includes(selectedWholesaleTarget)) {
+      setSelectedWholesaleTarget(targetKeys[0])
+    }
+  }, [formSpecs, selectedWholesaleTarget, specsEnabled])
+
   const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name || "-"
 
   const handleEdit = (product: ProductDetail) => {
@@ -154,21 +231,51 @@ export default function AdminProductsPage() {
       currency: product.currency || "CNY",
       cover_url: product.cover_url || "",
       low_stock_threshold: String(product.low_stock_threshold ?? 10),
-      wholesale_enabled: false,
+      wholesale_enabled: product.wholesale_enabled === true,
       is_enabled: product.is_enabled !== false,
       initial_sales: String(product.initial_sales ?? ""),
       sort_order: String(product.sort_order ?? ""),
       delivery_type: product.delivery_type || "AUTO",
     })
-    const specs = product.specs.map(s => ({
+    const specs = product.specs.map(s => createSpecDraft({
       id: s.id,
       name: s.name,
       price: String(s.price),
       card_key_count: s.card_key_count,
     }))
     setFormSpecs(specs)
+    setWholesaleRulesByTarget(buildWholesaleRuleMap(product.wholesale_rules))
+    setSelectedWholesaleTarget(product.spec_enabled === true && specs.length > 0
+      ? (specs[0].id ?? specs[0].client_id)
+      : DEFAULT_WHOLESALE_TARGET)
     setSpecsEnabled(product.spec_enabled === true)
     setShowModal(true)
+  }
+
+  const updateWholesaleRules = (targetKey: string, updater: (rules: WholesaleRuleDraft[]) => WholesaleRuleDraft[]) => {
+    setWholesaleRulesByTarget((prev) => ({
+      ...prev,
+      [targetKey]: updater(prev[targetKey] ?? []),
+    }))
+  }
+
+  const removeSpecDraftAt = (idx: number) => {
+    const spec = formSpecs[idx]
+    const targetKey = spec.id ?? spec.client_id
+    const nextSpecs = formSpecs.filter((_, i) => i !== idx)
+    setFormSpecs(nextSpecs)
+    setWholesaleRulesByTarget((prev) => {
+      const next = { ...prev }
+      if (spec.id) {
+        next[targetKey] = []
+      } else {
+        delete next[targetKey]
+      }
+      return next
+    })
+    if (selectedWholesaleTarget === targetKey) {
+      setSelectedWholesaleTarget(nextSpecs[0]?.id ?? nextSpecs[0]?.client_id ?? DEFAULT_WHOLESALE_TARGET)
+    }
   }
 
   const handleDelete = async (id: string) => {
@@ -236,6 +343,34 @@ export default function AdminProductsPage() {
         specNames.add(normalizedName)
       }
     }
+
+    const normalizedWholesaleRules: Record<string, { min_quantity: number; unit_price: number }[]> = {}
+    for (const [targetKey, rules] of Object.entries(wholesaleRulesByTarget)) {
+      const normalizedRules: { min_quantity: number; unit_price: number }[] = []
+      const usedMinQuantities = new Set<number>()
+      const nonEmptyRules = rules.filter(rule => rule.min_quantity.trim() || rule.unit_price.trim())
+      for (const rule of nonEmptyRules) {
+        const minQuantity = parseInt(rule.min_quantity, 10)
+        const unitPrice = parseFloat(rule.unit_price)
+        if (!Number.isInteger(minQuantity) || minQuantity <= 0) {
+          toast.error("档位购买数量必须是大于 0 的整数")
+          return
+        }
+        if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+          toast.error("档位单价必须大于 0")
+          return
+        }
+        if (usedMinQuantities.has(minQuantity)) {
+          toast.error("同一个规格下的档位数量不能重复")
+          return
+        }
+        usedMinQuantities.add(minQuantity)
+        normalizedRules.push({ min_quantity: minQuantity, unit_price: unitPrice })
+      }
+      normalizedRules.sort((a, b) => a.min_quantity - b.min_quantity)
+      normalizedWholesaleRules[targetKey] = normalizedRules
+    }
+
     setSaving(true)
     try {
       // Auto-sync base_price = min(spec prices) when specs enabled
@@ -256,7 +391,7 @@ export default function AdminProductsPage() {
         currency: formData.currency,
         cover_url: formData.cover_url || undefined,
         low_stock_threshold: parseInt(formData.low_stock_threshold) || 10,
-        wholesale_enabled: false,
+        wholesale_enabled: formData.wholesale_enabled,
         spec_enabled: specsEnabled,
         is_enabled: formData.is_enabled,
         initial_sales: parseInt(formData.initial_sales) || 0,
@@ -309,7 +444,61 @@ export default function AdminProductsPage() {
         }
       }
 
-      toast.success("保存成功")
+      if (productId && productId !== "mock-id") {
+        const latestSpecs = await adminProductApi.getSpecs(productId)
+        const targetToSpecId = new Map<string, string | null>([
+          [DEFAULT_WHOLESALE_TARGET, null],
+        ])
+
+        for (const spec of editingProduct?.specs || []) {
+          targetToSpecId.set(spec.id, spec.id)
+        }
+        for (const spec of latestSpecs) {
+          targetToSpecId.set(spec.id, spec.id)
+        }
+        for (const spec of formSpecs) {
+          if (spec.id) {
+            targetToSpecId.set(spec.client_id, spec.id)
+            targetToSpecId.set(spec.id, spec.id)
+            continue
+          }
+          const matchedSpec = latestSpecs.find(savedSpec => savedSpec.name.trim() === spec.name.trim())
+          if (matchedSpec) {
+            targetToSpecId.set(spec.client_id, matchedSpec.id)
+          }
+        }
+
+        const targetsToSync = new Set<string>([
+          DEFAULT_WHOLESALE_TARGET,
+          ...Object.keys(normalizedWholesaleRules),
+          ...((editingProduct?.wholesale_rules || []).map(rule => getWholesaleTargetKey(rule.spec_id))),
+        ])
+
+        let wholesaleSyncWarning = false
+        for (const targetKey of targetsToSync) {
+          const rules = normalizedWholesaleRules[targetKey] ?? []
+          const specId = targetToSpecId.get(targetKey)
+          if (targetKey !== DEFAULT_WHOLESALE_TARGET && !specId) {
+            if (rules.length > 0) {
+              wholesaleSyncWarning = true
+            }
+            continue
+          }
+          await adminProductApi.setWholesaleRules(productId, {
+            spec_id: specId ?? null,
+            rules,
+          })
+        }
+
+        if (wholesaleSyncWarning) {
+          toast.success("商品已保存，部分新规格的档位价请重新打开后检查")
+        } else {
+          toast.success("保存成功")
+        }
+      } else {
+        toast.success("保存成功")
+      }
+
       handleCloseModal()
       await fetchProducts()
     } catch (err: unknown) {
@@ -324,6 +513,8 @@ export default function AdminProductsPage() {
     setEditingProduct(null)
     setFormData({ title: "", description: "", detail_md: "", category_id: "", base_price: "", currency: "CNY", cover_url: "", low_stock_threshold: "10", wholesale_enabled: false, is_enabled: true, initial_sales: "", sort_order: "", delivery_type: "AUTO" })
     setFormSpecs([])
+    setWholesaleRulesByTarget(createEmptyWholesaleRuleMap())
+    setSelectedWholesaleTarget(DEFAULT_WHOLESALE_TARGET)
     setSpecsEnabled(false)
     setSpecDeleteConfirm(null)
     setFormErrors({})
@@ -613,11 +804,11 @@ export default function AdminProductsPage() {
               </div>
               {/* 上架状态 + 初始销量 */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-foreground">{t("admin.listingStatus")}</label>
-                  <div className="flex h-10 items-center gap-2">
-                    <button type="button" className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors", formData.is_enabled ? "bg-primary" : "bg-muted")} onClick={() => setFormData({ ...formData, is_enabled: !formData.is_enabled })}>
-                      <span className={cn("absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", formData.is_enabled && "translate-x-5")} />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-foreground">{t("admin.listingStatus")}</label>
+                <div className="flex h-10 items-center gap-2">
+                  <button type="button" className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors", formData.is_enabled ? "bg-primary" : "bg-muted")} onClick={() => setFormData({ ...formData, is_enabled: !formData.is_enabled })}>
+                    <span className={cn("absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", formData.is_enabled && "translate-x-5")} />
                     </button>
                     <span className="text-sm text-muted-foreground">{formData.is_enabled ? "已上架" : "已下架"}</span>
                   </div>
@@ -627,6 +818,120 @@ export default function AdminProductsPage() {
                   <input type="number" className="h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" placeholder="0" value={formData.initial_sales} onChange={(e) => setFormData({ ...formData, initial_sales: e.target.value })} />
                   <p className="text-xs text-muted-foreground">前台显示销量 = 真实销量 + 初始销量</p>
                 </div>
+              </div>
+              {/* 档位价格 */}
+              <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium text-foreground">档位价格</label>
+                    <p className="text-xs text-muted-foreground">
+                      例如默认 20 元，买满 10 个 15 元/个，买满 30 个 10 元/个
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">启用档位价</span>
+                    <button
+                      type="button"
+                      className={cn("relative h-6 w-11 rounded-full transition-colors", formData.wholesale_enabled ? "bg-primary" : "bg-muted")}
+                      onClick={() => setFormData({ ...formData, wholesale_enabled: !formData.wholesale_enabled })}
+                    >
+                      <span className={cn("absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", formData.wholesale_enabled && "translate-x-5")} />
+                    </button>
+                  </div>
+                </div>
+
+                {formData.wholesale_enabled ? (
+                  <>
+                    {specsEnabled && formSpecs.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {formSpecs.map((spec) => {
+                          const targetKey = spec.id ?? spec.client_id
+                          return (
+                            <button
+                              key={spec.client_id}
+                              type="button"
+                              className={cn(
+                                "rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
+                                selectedWholesaleTarget === targetKey
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-input text-foreground hover:border-primary/30"
+                              )}
+                              onClick={() => setSelectedWholesaleTarget(targetKey)}
+                            >
+                              {spec.name.trim() || "未命名规格"}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">当前按默认售价配置档位价。</p>
+                    )}
+
+                    <div className="flex flex-col gap-2">
+                      {(wholesaleRulesByTarget[specsEnabled ? selectedWholesaleTarget : DEFAULT_WHOLESALE_TARGET] ?? []).map((rule, idx) => (
+                        <div key={`${specsEnabled ? selectedWholesaleTarget : DEFAULT_WHOLESALE_TARGET}-${idx}`} className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">满</span>
+                          <input
+                            type="number"
+                            min="1"
+                            className="h-9 w-28 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                            placeholder="数量"
+                            value={rule.min_quantity}
+                            onChange={(e) => {
+                              const targetKey = specsEnabled ? selectedWholesaleTarget : DEFAULT_WHOLESALE_TARGET
+                              updateWholesaleRules(targetKey, (currentRules) => {
+                                const next = [...currentRules]
+                                next[idx] = { ...next[idx], min_quantity: e.target.value }
+                                return next
+                              })
+                            }}
+                          />
+                          <span className="text-sm text-muted-foreground">个，单价</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="h-9 w-32 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                            placeholder="价格"
+                            value={rule.unit_price}
+                            onChange={(e) => {
+                              const targetKey = specsEnabled ? selectedWholesaleTarget : DEFAULT_WHOLESALE_TARGET
+                              updateWholesaleRules(targetKey, (currentRules) => {
+                                const next = [...currentRules]
+                                next[idx] = { ...next[idx], unit_price: e.target.value }
+                                return next
+                              })
+                            }}
+                          />
+                          <span className="text-sm text-muted-foreground">元/个</span>
+                          <button
+                            type="button"
+                            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => {
+                              const targetKey = specsEnabled ? selectedWholesaleTarget : DEFAULT_WHOLESALE_TARGET
+                              updateWholesaleRules(targetKey, (currentRules) => currentRules.filter((_, ruleIdx) => ruleIdx !== idx))
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="flex h-9 items-center justify-center gap-1 rounded-lg border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                        onClick={() => {
+                          const targetKey = specsEnabled ? selectedWholesaleTarget : DEFAULT_WHOLESALE_TARGET
+                          updateWholesaleRules(targetKey, (currentRules) => [...currentRules, createWholesaleRuleDraft()])
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        添加档位
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">关闭后档位规则仍会保留，但前台不会按阶梯单价生效。</p>
+                )}
               </div>
               {/* 发货方式 */}
               <div className="flex flex-col gap-1.5">
@@ -665,7 +970,18 @@ export default function AdminProductsPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">启用多规格</span>
                     <button type="button" className={cn("relative h-6 w-11 rounded-full transition-colors", specsEnabled ? "bg-primary" : "bg-muted")} onClick={() => {
-                      if (specsEnabled) { setSpecsEnabled(false) } else { setSpecsEnabled(true); if (formSpecs.length === 0) setFormSpecs([{ name: "", price: "" }]) }
+                      if (specsEnabled) {
+                        setSpecsEnabled(false)
+                      } else {
+                        setSpecsEnabled(true)
+                        if (formSpecs.length === 0) {
+                          const specDraft = createSpecDraft()
+                          setFormSpecs([specDraft])
+                          setSelectedWholesaleTarget(specDraft.client_id)
+                        } else {
+                          setSelectedWholesaleTarget(formSpecs[0].id ?? formSpecs[0].client_id)
+                        }
+                      }
                     }}>
                       <span className={cn("absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", specsEnabled && "translate-x-5")} />
                     </button>
@@ -707,7 +1023,7 @@ export default function AdminProductsPage() {
                             if (s.id && s.card_key_count && s.card_key_count > 0) {
                               setSpecDeleteConfirm({ idx, name: s.name, count: s.card_key_count })
                             } else {
-                              setFormSpecs(prev => prev.filter((_, i) => i !== idx))
+                              removeSpecDraftAt(idx)
                             }
                           }}
                         >
@@ -718,7 +1034,13 @@ export default function AdminProductsPage() {
                     <button
                       type="button"
                       className="flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors"
-                      onClick={() => setFormSpecs(prev => [...prev, { name: "", price: "" }])}
+                      onClick={() => {
+                        const specDraft = createSpecDraft()
+                        setFormSpecs(prev => [...prev, specDraft])
+                        if (formData.wholesale_enabled) {
+                          setSelectedWholesaleTarget(specDraft.client_id)
+                        }
+                      }}
                     >
                       <Plus className="h-3.5 w-3.5" />
                       添加规格
@@ -836,7 +1158,7 @@ export default function AdminProductsPage() {
                 <button type="button" className="rounded-lg border border-input bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors" onClick={() => setSpecDeleteConfirm(null)}>取消</button>
                 <button type="button" className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors" onClick={() => {
                   if (specDeleteConfirm) {
-                    setFormSpecs(prev => prev.filter((_, i) => i !== specDeleteConfirm.idx))
+                    removeSpecDraftAt(specDeleteConfirm.idx)
                     setSpecDeleteConfirm(null)
                   }
                 }}>确认删除</button>

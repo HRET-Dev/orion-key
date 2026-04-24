@@ -77,6 +77,7 @@ export interface ProductSpec {
 }
 
 export interface WholesaleRule {
+  spec_id?: string | null
   min_quantity: number
   unit_price: number
 }

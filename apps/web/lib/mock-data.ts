@@ -186,9 +186,9 @@ const mockProductDetails: Record<string, ProductDetail> = {
     specs: [specSteam50],
     wholesale_enabled: true,
     wholesale_rules: [
-      { min_quantity: 5, unit_price: 47.5 },
-      { min_quantity: 10, unit_price: 46.5 },
-      { min_quantity: 50, unit_price: 45.0 },
+      { spec_id: specSteam50.id, min_quantity: 5, unit_price: 47.5 },
+      { spec_id: specSteam50.id, min_quantity: 10, unit_price: 46.5 },
+      { spec_id: specSteam50.id, min_quantity: 50, unit_price: 45.0 },
     ],
   },
   [uuid(12)]: {
@@ -211,8 +211,8 @@ const mockProductDetails: Record<string, ProductDetail> = {
     specs: [specWin11Pro, specWin11Ent],
     wholesale_enabled: true,
     wholesale_rules: [
-      { min_quantity: 3, unit_price: 118.0 },
-      { min_quantity: 10, unit_price: 108.0 },
+      { spec_id: specWin11Pro.id, min_quantity: 3, unit_price: 118.0 },
+      { spec_id: specWin11Pro.id, min_quantity: 10, unit_price: 108.0 },
     ],
   },
   [uuid(15)]: {

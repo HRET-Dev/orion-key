@@ -5,12 +5,14 @@ import com.orionkey.constant.ErrorCode;
 import com.orionkey.entity.CartItem;
 import com.orionkey.entity.Product;
 import com.orionkey.entity.ProductSpec;
+import com.orionkey.entity.WholesaleRule;
 import com.orionkey.exception.BusinessException;
 import com.orionkey.repository.CardKeyRepository;
 import com.orionkey.repository.CartItemRepository;
 import com.orionkey.repository.ProductRepository;
 import com.orionkey.repository.ProductSpecRepository;
 import com.orionkey.repository.SiteConfigRepository;
+import com.orionkey.repository.WholesaleRuleRepository;
 import com.orionkey.service.CartService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,7 @@ public class CartServiceImpl implements CartService {
     private final ProductSpecRepository productSpecRepository;
     private final CardKeyRepository cardKeyRepository;
     private final SiteConfigRepository siteConfigRepository;
+    private final WholesaleRuleRepository wholesaleRuleRepository;
 
     @Override
     @Transactional
@@ -205,14 +208,15 @@ public class CartServiceImpl implements CartService {
         Product product = productRepository.findById(item.getProductId()).orElse(null);
         String productTitle = product != null ? product.getTitle() : "未知商品";
         String coverUrl = product != null ? product.getCoverUrl() : null;
-        BigDecimal unitPrice = product != null ? product.getBasePrice() : BigDecimal.ZERO;
+        BigDecimal unitPrice = product != null
+                ? getUnitPrice(product, item.getSpecId(), item.getQuantity())
+                : BigDecimal.ZERO;
 
         String specName = null;
         if (item.getSpecId() != null) {
             ProductSpec spec = productSpecRepository.findById(item.getSpecId()).orElse(null);
             if (spec != null) {
                 specName = spec.getName();
-                unitPrice = spec.getPrice();
             }
         }
 
@@ -230,6 +234,28 @@ public class CartServiceImpl implements CartService {
         map.put("stock_available", stockAvailable);
 
         return map;
+    }
+
+    private BigDecimal getUnitPrice(Product product, UUID specId, int quantity) {
+        BigDecimal basePrice = product.getBasePrice();
+        if (specId != null) {
+            ProductSpec spec = productSpecRepository.findById(specId)
+                    .filter(s -> s.getProductId().equals(product.getId()) && s.getIsDeleted() == 0)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.SPEC_NOT_FOUND, "商品规格不存在或与商品不匹配"));
+            basePrice = spec.getPrice();
+        }
+
+        if (product.isWholesaleEnabled()) {
+            List<WholesaleRule> rules = specId != null
+                    ? wholesaleRuleRepository.findByProductIdAndSpecIdOrderByMinQuantityAsc(product.getId(), specId)
+                    : wholesaleRuleRepository.findByProductIdAndSpecIdIsNullOrderByMinQuantityAsc(product.getId());
+            for (int i = rules.size() - 1; i >= 0; i--) {
+                if (quantity >= rules.get(i).getMinQuantity()) {
+                    return rules.get(i).getUnitPrice();
+                }
+            }
+        }
+        return basePrice;
     }
 
     /** 每用户单次最大购买数量，后台可配，兜底 999 */

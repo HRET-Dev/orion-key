@@ -218,6 +218,7 @@ public class ProductServiceImpl implements ProductService {
         return wholesaleRuleRepository.findByProductIdOrderByMinQuantityAsc(productId).stream()
                 .map(r -> {
                     Map<String, Object> m = new HashMap<>();
+                    m.put("spec_id", r.getSpecId());
                     m.put("min_quantity", r.getMinQuantity());
                     m.put("unit_price", r.getUnitPrice());
                     return m;
@@ -293,6 +294,7 @@ public class ProductServiceImpl implements ProductService {
         map.put("wholesale_rules", wholesaleRuleRepository.findByProductIdOrderByMinQuantityAsc(p.getId()).stream()
                 .map(r -> {
                     Map<String, Object> m = new HashMap<>();
+                    m.put("spec_id", r.getSpecId());
                     m.put("min_quantity", r.getMinQuantity());
                     m.put("unit_price", r.getUnitPrice());
                     return m;
