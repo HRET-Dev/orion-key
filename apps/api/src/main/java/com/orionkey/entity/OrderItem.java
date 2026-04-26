@@ -30,6 +30,9 @@ public class OrderItem extends BaseEntity {
 
     private String specName;
 
+    @Column(columnDefinition = "TEXT")
+    private String deliveryMessage;
+
     @Column(nullable = false)
     private int quantity;
 

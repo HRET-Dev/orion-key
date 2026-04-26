@@ -111,6 +111,7 @@ export default function AdminProductsPage() {
     title: "",
     description: "",
     detail_md: "",
+    delivery_message: "",
     category_id: "",
     base_price: "",
     currency: "CNY",
@@ -226,6 +227,7 @@ export default function AdminProductsPage() {
       title: product.title,
       description: product.description || "",
       detail_md: product.detail_md || "",
+      delivery_message: product.delivery_message || "",
       category_id: product.category_id,
       base_price: String(product.base_price),
       currency: product.currency || "CNY",
@@ -386,6 +388,7 @@ export default function AdminProductsPage() {
         title: formData.title,
         description: formData.description || undefined,
         detail_md: formData.detail_md || undefined,
+        delivery_message: formData.delivery_message,
         category_id: formData.category_id,
         base_price: basePrice,
         currency: formData.currency,
@@ -511,7 +514,7 @@ export default function AdminProductsPage() {
   const handleCloseModal = () => {
     setShowModal(false)
     setEditingProduct(null)
-    setFormData({ title: "", description: "", detail_md: "", category_id: "", base_price: "", currency: "CNY", cover_url: "", low_stock_threshold: "10", wholesale_enabled: false, is_enabled: true, initial_sales: "", sort_order: "", delivery_type: "AUTO" })
+    setFormData({ title: "", description: "", detail_md: "", delivery_message: "", category_id: "", base_price: "", currency: "CNY", cover_url: "", low_stock_threshold: "10", wholesale_enabled: false, is_enabled: true, initial_sales: "", sort_order: "", delivery_type: "AUTO" })
     setFormSpecs([])
     setWholesaleRulesByTarget(createEmptyWholesaleRuleMap())
     setSelectedWholesaleTarget(DEFAULT_WHOLESALE_TARGET)
@@ -726,6 +729,17 @@ export default function AdminProductsPage() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-foreground">{t("admin.productBrief")}</label>
                 <input type="text" className="h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" placeholder="简短描述商品特点" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
+              </div>
+              {/* 发货留言 */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-foreground">{t("admin.deliveryMessage")}</label>
+                <textarea
+                  className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  placeholder={t("admin.deliveryMessagePlaceholder")}
+                  value={formData.delivery_message}
+                  onChange={(e) => setFormData({ ...formData, delivery_message: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">{t("admin.deliveryMessageHint")}</p>
               </div>
               {/* 分类 + 货币类型 */}
               <div className="grid grid-cols-2 gap-4">

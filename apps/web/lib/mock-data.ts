@@ -364,6 +364,7 @@ export const mockDeliverResults: DeliverResult[] = [
       {
         product_title: "Steam 50元钱包充值卡",
         spec_name: "50元面额",
+        delivery_message: "兑换地址：https://store.steampowered.com/account/redeemwalletcode",
         card_keys: [
           "STEAM-XXXX-YYYY-ZZZZ-1111",
           "STEAM-XXXX-YYYY-ZZZZ-2222",

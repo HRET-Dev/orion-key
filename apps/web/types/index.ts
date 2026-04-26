@@ -104,6 +104,7 @@ export interface ProductCard {
 /** Full product detail (returned by GET /products/{id}) */
 export interface ProductDetail extends ProductCard {
   detail_md?: string
+  delivery_message?: string
   specs: ProductSpec[]
   spec_enabled?: boolean
   wholesale_enabled: boolean
@@ -166,6 +167,7 @@ export interface OrderItemDetail {
   product_id: string
   product_title: string
   spec_name: string | null
+  delivery_message?: string | null
   quantity: number
   unit_price: number
   subtotal: number
@@ -209,6 +211,7 @@ export interface CreateOrderResult {
 export interface DeliverResultGroup {
   product_title: string
   spec_name: string | null
+  delivery_message?: string | null
   card_keys: string[]
 }
 

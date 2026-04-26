@@ -195,7 +195,13 @@ export default function OrderQueryPage() {
   }
 
   const copyAllKeys = (deliver: DeliverResult) => {
-    const allKeys = deliver.groups.flatMap(g => g.card_keys).join("\n")
+    const allKeys = deliver.groups.flatMap(g => {
+      const lines = [...g.card_keys]
+      if (g.delivery_message?.trim()) {
+        lines.unshift(`${t("order.deliveryMessage")}\n${g.delivery_message.trim()}`)
+      }
+      return lines
+    }).join("\n")
     copyToClipboard(allKeys)
   }
 
@@ -203,6 +209,11 @@ export default function OrderQueryPage() {
     const lines: string[] = []
     deliver.groups.forEach(g => {
       lines.push(`--- ${g.product_title}${g.spec_name ? ` (${g.spec_name})` : ""} ---`)
+      if (g.delivery_message?.trim()) {
+        lines.push(`${t("order.deliveryMessage")}:`)
+        lines.push(g.delivery_message.trim())
+        lines.push("")
+      }
       g.card_keys.forEach(k => lines.push(k))
       lines.push("")
     })
@@ -515,6 +526,12 @@ export default function OrderQueryPage() {
                       <p className="mb-1 text-sm font-medium text-muted-foreground">
                         {group.product_title}{group.spec_name ? ` - ${group.spec_name}` : ""}
                       </p>
+                      {group.delivery_message?.trim() && (
+                        <div className="mb-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+                          <p className="mb-1 text-xs font-semibold text-primary">{t("order.deliveryMessage")}</p>
+                          <p className="whitespace-pre-wrap break-words text-sm text-foreground">{group.delivery_message}</p>
+                        </div>
+                      )}
                       <div className="rounded-md bg-muted p-3" onCopy={(e) => { const t = window.getSelection()?.toString(); if (t) { e.clipboardData.setData("text/plain", stripInvisible(t)); e.preventDefault() } }}>
                         {group.card_keys.map((key, kIdx) => (
                           <div

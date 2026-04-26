@@ -69,6 +69,7 @@ public class ProductServiceImpl implements ProductService {
         detail.put("is_enabled", product.isEnabled());
         detail.put("sort_order", product.getSortOrder());
         detail.put("low_stock_threshold", product.getLowStockThreshold());
+        detail.put("delivery_message", product.getDeliveryMessage());
         detail.put("created_at", product.getCreatedAt());
         detail.put("updated_at", product.getUpdatedAt());
         return detail;
@@ -88,6 +89,7 @@ public class ProductServiceImpl implements ProductService {
             detail.put("is_enabled", p.isEnabled());
             detail.put("sort_order", p.getSortOrder());
             detail.put("low_stock_threshold", p.getLowStockThreshold());
+            detail.put("delivery_message", p.getDeliveryMessage());
             detail.put("sales_count", orderItemRepository.sumQuantityByProductId(p.getId()));
             detail.put("created_at", p.getCreatedAt());
             detail.put("updated_at", p.getUpdatedAt());
@@ -104,6 +106,7 @@ public class ProductServiceImpl implements ProductService {
         product.setDescription((String) req.get("description"));
         product.setDetailMd((String) req.get("detail_md"));
         product.setCoverUrl((String) req.get("cover_url"));
+        product.setDeliveryMessage((String) req.get("delivery_message"));
         product.setBasePrice(new BigDecimal(req.get("base_price").toString()));
         if (req.containsKey("currency")) product.setCurrency((String) req.get("currency"));
         if (req.containsKey("delivery_type")) product.setDeliveryType((String) req.get("delivery_type"));
@@ -128,6 +131,7 @@ public class ProductServiceImpl implements ProductService {
         if (req.containsKey("description")) product.setDescription((String) req.get("description"));
         if (req.containsKey("detail_md")) product.setDetailMd((String) req.get("detail_md"));
         if (req.containsKey("cover_url")) product.setCoverUrl((String) req.get("cover_url"));
+        if (req.containsKey("delivery_message")) product.setDeliveryMessage((String) req.get("delivery_message"));
         if (req.containsKey("base_price")) product.setBasePrice(new BigDecimal(req.get("base_price").toString()));
         if (req.containsKey("currency")) product.setCurrency((String) req.get("currency"));
         if (req.containsKey("delivery_type")) product.setDeliveryType((String) req.get("delivery_type"));

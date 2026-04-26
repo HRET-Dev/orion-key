@@ -223,6 +223,9 @@ public class DeliverServiceImpl implements DeliverService {
                 sb.append("商品: ").append(item.getProductTitle());
                 if (item.getSpecName() != null) sb.append(" [").append(item.getSpecName()).append("]");
                 sb.append("\n");
+                if (item.getDeliveryMessage() != null && !item.getDeliveryMessage().isBlank()) {
+                    sb.append("发货留言:\n").append(item.getDeliveryMessage()).append("\n");
+                }
                 for (CardKey key : entry.getValue()) {
                     sb.append(key.getContent()).append("\n");
                 }
@@ -248,6 +251,7 @@ public class DeliverServiceImpl implements DeliverService {
                 Map<String, Object> g = new LinkedHashMap<>();
                 g.put("product_title", item.getProductTitle());
                 g.put("spec_name", item.getSpecName());
+                g.put("delivery_message", item.getDeliveryMessage());
                 g.put("card_keys", entry.getValue().stream().map(CardKey::getContent).toList());
                 groups.add(g);
             }

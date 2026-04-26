@@ -152,6 +152,11 @@ public class EmailServiceImpl implements EmailService {
             sb.append("<div style=\"background-color:#f0f0f5;padding:10px 16px;font-size:14px;font-weight:600;color:#333;\">")
               .append(title).append("</div>");
             sb.append("<div style=\"padding:12px 16px;\">");
+            if (item.getDeliveryMessage() != null && !item.getDeliveryMessage().isBlank()) {
+                sb.append("<div style=\"background-color:#eef6ff;border:1px solid #bfdbfe;border-radius:4px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:#1e3a8a;line-height:1.6;white-space:pre-wrap;word-break:break-word;\">")
+                  .append("<div style=\"font-weight:600;margin-bottom:4px;\">发货留言</div>")
+                  .append(escapeHtml(item.getDeliveryMessage())).append("</div>");
+            }
             for (CardKey key : entry.getValue()) {
                 sb.append("<div style=\"background-color:#fafafa;border:1px solid #eee;border-radius:4px;padding:8px 12px;margin-bottom:6px;font-family:'Courier New',Courier,monospace;font-size:13px;color:#222;word-break:break-all;\">")
                   .append(escapeHtml(key.getContent())).append("</div>");

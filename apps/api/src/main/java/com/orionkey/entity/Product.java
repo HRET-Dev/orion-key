@@ -40,6 +40,9 @@ public class Product extends BaseEntity {
     @Column(length = 10)
     private String deliveryType = "AUTO";
 
+    @Column(columnDefinition = "TEXT")
+    private String deliveryMessage;
+
     private int lowStockThreshold = 10;
 
     private boolean wholesaleEnabled = false;

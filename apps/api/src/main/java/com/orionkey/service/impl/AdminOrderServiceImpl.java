@@ -165,6 +165,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             im.put("product_id", i.getProductId());
             im.put("product_title", i.getProductTitle());
             im.put("spec_name", i.getSpecName());
+            im.put("delivery_message", i.getDeliveryMessage());
             im.put("quantity", i.getQuantity());
             im.put("unit_price", i.getUnitPrice());
             im.put("subtotal", i.getSubtotal());

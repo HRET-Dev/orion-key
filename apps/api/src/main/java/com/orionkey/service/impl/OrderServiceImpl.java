@@ -142,6 +142,7 @@ public class OrderServiceImpl implements OrderService {
         item.setSpecId(specId);
         item.setProductTitle(product.getTitle());
         item.setSpecName(specName);
+        item.setDeliveryMessage(product.getDeliveryMessage());
         item.setQuantity(quantity);
         item.setUnitPrice(unitPrice);
         item.setSubtotal(totalAmount);
@@ -255,6 +256,7 @@ public class OrderServiceImpl implements OrderService {
             item.setSpecId(ci.getSpecId());
             item.setProductTitle(product.getTitle());
             item.setSpecName(specName);
+            item.setDeliveryMessage(product.getDeliveryMessage());
             item.setQuantity(ci.getQuantity());
             item.setUnitPrice(unitPrice);
             item.setSubtotal(subtotal);
@@ -432,6 +434,7 @@ public class OrderServiceImpl implements OrderService {
             im.put("product_id", i.getProductId());
             im.put("product_title", i.getProductTitle());
             im.put("spec_name", i.getSpecName());
+            im.put("delivery_message", i.getDeliveryMessage());
             im.put("quantity", i.getQuantity());
             im.put("unit_price", i.getUnitPrice());
             im.put("subtotal", i.getSubtotal());
