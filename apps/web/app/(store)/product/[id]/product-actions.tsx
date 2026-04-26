@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Zap, Minus, Plus, ShoppingCart, Package, TrendingUp } from "lucide-react"
 import { toast } from "sonner"
-import { useLocale, useCart } from "@/lib/context"
+import { useLocale, useCart, useAuth } from "@/lib/context"
 import { couponApi, orderApi, withMockFallback, getApiErrorMessage, setTurnstileHeaders } from "@/services/api"
 import { mockCreateOrder } from "@/lib/mock-data"
 import { Turnstile, useTurnstile } from "@/components/shared/turnstile"
@@ -29,6 +29,7 @@ interface ProductActionsProps {
 export function ProductActions({ product, channels }: ProductActionsProps) {
   const { t } = useLocale()
   const { addItem } = useCart()
+  const { user, isLoggedIn } = useAuth()
   const router = useRouter()
   const emailInputRef = useRef<HTMLInputElement>(null)
 
@@ -77,6 +78,13 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
     setAppliedCoupon(null)
   }, [product.id, selectedSpec?.id, quantity])
 
+  useEffect(() => {
+    if (!email.trim() && user?.email) {
+      setEmail(user.email)
+      setEmailError("")
+    }
+  }, [user, email])
+
   const handleEmailChange = (value: string) => {
     setEmail(value)
     if (value && !validateEmail(value)) {
@@ -87,13 +95,15 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
   }
 
   const handleBuyNow = async () => {
-    if (!email.trim()) {
+    const orderEmail = email.trim() || user?.email?.trim() || ""
+
+    if (!orderEmail) {
       toast.error(t("product.emailRequired"))
       emailInputRef.current?.focus()
       emailInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
       return
     }
-    if (!validateEmail(email)) {
+    if (!validateEmail(orderEmail)) {
       toast.error(t("product.emailInvalid"))
       emailInputRef.current?.focus()
       return
@@ -117,13 +127,13 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
           product_id: product.id,
           spec_id: selectedSpec?.id ?? null,
           quantity,
-          email,
+          email: orderEmail,
           payment_method: selectedPayment,
           coupon_code: appliedCoupon?.code,
           idempotency_key: generateIdempotencyKey(),
           device,
         }),
-        () => mockCreateOrder(email, selectedPayment)
+        () => mockCreateOrder(orderEmail, selectedPayment)
       )
       toast.success(t("checkout.processingOrder"))
       if (result.payment.hosted_page_action && result.payment.hosted_page_fields) {
@@ -396,7 +406,7 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
           <input
             ref={emailInputRef}
             type="email"
-            placeholder={t("product.emailPlaceholder")}
+            placeholder={isLoggedIn && user?.email ? user.email : t("product.emailPlaceholder")}
             value={email}
             onChange={(e) => handleEmailChange(e.target.value)}
             className={cn(
@@ -406,7 +416,7 @@ export function ProductActions({ product, channels }: ProductActionsProps) {
           />
           <div className="mt-1.5">
             <p className="text-xs text-muted-foreground">
-              {t("product.emailFullHint")}
+              {isLoggedIn && user?.email ? `已自动带入账号邮箱：${user.email}` : t("product.emailFullHint")}
             </p>
             {emailError && (
               <p className="mt-1 text-xs text-destructive">{emailError}</p>
